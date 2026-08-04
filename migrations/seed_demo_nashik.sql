@@ -112,6 +112,246 @@ CREATE TABLE IF NOT EXISTS finance_vouchers (
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+DROP TABLE IF EXISTS goods_receipt_notes CASCADE;
+DROP TABLE IF EXISTS purchase_orders CASCADE;
+DROP TABLE IF EXISTS warehouse_inventory CASCADE;
+
+CREATE TABLE purchase_orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  order_reference VARCHAR(100),
+  site_name VARCHAR(255),
+  vendor_name VARCHAR(255),
+  material_description TEXT,
+  quantity NUMERIC(15, 2),
+  unit_rate NUMERIC(15, 2),
+  freight_amount NUMERIC(15, 2),
+  gst_amount NUMERIC(15, 2),
+  order_value_amount NUMERIC(15, 2),
+  delivery_due_date DATE,
+  requires_hitl BOOLEAN DEFAULT false,
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE goods_receipt_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  grn_reference VARCHAR(100),
+  order_reference VARCHAR(100),
+  warehouse_name VARCHAR(255),
+  vendor_name VARCHAR(255),
+  material_name VARCHAR(255),
+  accepted_quantity NUMERIC(15, 2),
+  rejected_quantity NUMERIC(15, 2),
+  unit_of_measure VARCHAR(50),
+  inspection_status VARCHAR(50),
+  gatepass_number VARCHAR(100),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE warehouse_inventory (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  category VARCHAR(100),
+  item_description VARCHAR(255),
+  storage_location VARCHAR(255),
+  available_quantity NUMERIC(15, 2),
+  unit_of_measure VARCHAR(50),
+  reorder_level NUMERIC(15, 2),
+  unit_cost NUMERIC(15, 2)
+);
+
+DROP TABLE IF EXISTS land_parcels CASCADE;
+CREATE TABLE land_parcels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  parcel_reference VARCHAR(100),
+  parcel_description TEXT,
+  location_zone VARCHAR(255),
+  plot_area_acres NUMERIC(15, 2),
+  applicable_fsi NUMERIC(5, 2),
+  base_land_value_amount NUMERIC(15, 2),
+  stamp_duty_amount NUMERIC(15, 2),
+  registration_amount NUMERIC(15, 2),
+  total_outlay_amount NUMERIC(15, 2),
+  title_status VARCHAR(100),
+  acquisition_phase VARCHAR(100),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS jda_contracts CASCADE;
+CREATE TABLE jda_contracts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  agreement_reference VARCHAR(100),
+  landowner_name VARCHAR(255),
+  project_site VARCHAR(255),
+  developer_share_pct NUMERIC(5, 2),
+  landowner_share_pct NUMERIC(5, 2),
+  escrow_account_status VARCHAR(100),
+  contract_status VARCHAR(100),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS rera_compliances CASCADE;
+CREATE TABLE rera_compliances (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  project_name VARCHAR(255),
+  rera_reg_reference VARCHAR(100),
+  quarterly_return_status VARCHAR(100),
+  escrow_balance_amount NUMERIC(15, 2),
+  form1_status BOOLEAN DEFAULT false,
+  form2_status BOOLEAN DEFAULT false,
+  form3_status BOOLEAN DEFAULT false,
+  certificate_audit_status VARCHAR(100),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS title_search_logs CASCADE;
+CREATE TABLE title_search_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  survey_number VARCHAR(100),
+  legal_advocate VARCHAR(255),
+  search_period_years INT,
+  encumbrance_status VARCHAR(100),
+  extract_verified_712 BOOLEAN DEFAULT false,
+  risk_rating VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS facility_assets CASCADE;
+CREATE TABLE facility_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  asset_description TEXT,
+  location_name VARCHAR(255),
+  category VARCHAR(100),
+  amc_provider_name VARCHAR(255),
+  warranty_expiry_date DATE,
+  last_service_date DATE,
+  operating_status VARCHAR(50),
+  maintenance_cost NUMERIC(15, 2)
+);
+
+DROP TABLE IF EXISTS maintenance_tickets CASCADE;
+CREATE TABLE maintenance_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  ticket_reference VARCHAR(100),
+  ticket_summary TEXT,
+  property_location VARCHAR(255),
+  category VARCHAR(100),
+  priority VARCHAR(50),
+  sla_status VARCHAR(100),
+  assigned_contractor VARCHAR(255),
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS unit_handovers CASCADE;
+CREATE TABLE unit_handovers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  handover_reference VARCHAR(100),
+  unit_name VARCHAR(255),
+  buyer_name VARCHAR(255),
+  desnagging_completion_pct NUMERIC(5, 2),
+  financial_noc_cleared BOOLEAN DEFAULT false,
+  outstanding_balance NUMERIC(15, 2),
+  target_handover_date DATE,
+  requires_hitl BOOLEAN DEFAULT false,
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS cam_invoices CASCADE;
+CREATE TABLE cam_invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  invoice_reference VARCHAR(100),
+  unit_name VARCHAR(255),
+  super_builtup_sqft NUMERIC(15, 2),
+  billing_period VARCHAR(50),
+  base_cam_amount NUMERIC(15, 2),
+  gst_amount NUMERIC(15, 2),
+  total_due_amount NUMERIC(15, 2),
+  payment_status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS hr_attendance_logs CASCADE;
+CREATE TABLE hr_attendance_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  employee_name VARCHAR(255),
+  site_location VARCHAR(255),
+  check_in_time VARCHAR(20),
+  check_out_time VARCHAR(20),
+  device_status VARCHAR(50),
+  overtime_hours NUMERIC(5, 2),
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS hr_payroll_runs CASCADE;
+CREATE TABLE hr_payroll_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  cycle_month VARCHAR(50),
+  total_gross_salary NUMERIC(15, 2),
+  total_pf_deduction NUMERIC(15, 2),
+  total_esic_deduction NUMERIC(15, 2),
+  total_pt_deduction NUMERIC(15, 2),
+  approved_expenses NUMERIC(15, 2),
+  net_payable NUMERIC(15, 2),
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  employee_count INT,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS hr_candidates CASCADE;
+CREATE TABLE hr_candidates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  candidate_name VARCHAR(255),
+  target_position VARCHAR(255),
+  experience_level VARCHAR(100),
+  current_stage VARCHAR(100),
+  interview_score INT,
+  contact_email VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS hr_performance_goals CASCADE;
+CREATE TABLE hr_performance_goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  employee_name VARCHAR(255),
+  is_trainee BOOLEAN DEFAULT false,
+  department VARCHAR(100),
+  title VARCHAR(255),
+  target_score INT,
+  achieved_score INT,
+  status VARCHAR(50)
+);
+
+DROP TABLE IF EXISTS hr_approvals CASCADE;
+CREATE TABLE hr_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  approval_reference VARCHAR(100),
+  employee_name VARCHAR(255),
+  approval_type VARCHAR(100),
+  details TEXT,
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- SECTION 2 - ORGANISATION PROFILE
 -- ============================================================================
