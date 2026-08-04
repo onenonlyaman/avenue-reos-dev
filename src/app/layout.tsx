@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Avenue Builders — Real Estate Operating System",
+  title: "Avenue Builders - REOS",
   description: "Enterprise operating platform for developers, builders, contractors, finance teams, and executive management.",
 };
 
