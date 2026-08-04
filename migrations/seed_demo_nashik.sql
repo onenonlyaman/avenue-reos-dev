@@ -17,15 +17,18 @@ BEGIN;
 DO $$
 DECLARE
     tbl text;
+    i int;
 BEGIN
-    FOR tbl IN
-        SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-    LOOP
-        BEGIN
-            EXECUTE format('DELETE FROM %I WHERE tenant_id = %L::uuid', tbl, '00000000-0000-0000-0000-000000000001');
-        EXCEPTION WHEN OTHERS THEN
-            NULL;
-        END;
+    FOR i IN 1..3 LOOP
+        FOR tbl IN
+            SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        LOOP
+            BEGIN
+                EXECUTE format('DELETE FROM %I WHERE tenant_id = %L::uuid', tbl, '00000000-0000-0000-0000-000000000001');
+            EXCEPTION WHEN OTHERS THEN
+                NULL;
+            END;
+        END LOOP;
     END LOOP;
 END $$;
 
@@ -994,7 +997,8 @@ INSERT INTO master_project (
   ('11111111-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000001'::uuid, 'PRJ-PTH-03', 'Avenue Commercia',
    'Pathardi Phata, Nashik', 318000, 1420000000.00, 'ACTIVE', '2025-02-01', '2027-09-30', NOW() - INTERVAL '12 months'),
   ('11111111-0000-4000-8000-000000000004', '00000000-0000-0000-0000-000000000001'::uuid, 'PRJ-MKB-04', 'Avenue Riverfront',
-   'Makhmalabad, Nashik', 184000, 780000000.00, 'ACTIVE', '2025-08-01', '2028-06-30', NOW() - INTERVAL '6 months');
+   'Makhmalabad, Nashik', 184000, 780000000.00, 'ACTIVE', '2025-08-01', '2028-06-30', NOW() - INTERVAL '6 months')
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- SECTION 4 - WORKFORCE
@@ -1014,7 +1018,8 @@ INSERT INTO master_employee (
   ('22222222-0000-4000-8000-000000000009', '00000000-0000-0000-0000-000000000001'::uuid, 'EMP-109', 'Aarti Shinde', 'aarti.shinde@avenuebuilders.in', '+91 98220 41009', 'Legal & Land Acquisition', 'Legal Counsel', 'Legal Manager', 'ACTIVE', '2020-06-22'),
   ('22222222-0000-4000-8000-000000000010', '00000000-0000-0000-0000-000000000001'::uuid, 'EMP-110', 'Kiran Gaikwad', 'kiran.gaikwad@avenuebuilders.in', '+91 98220 41010', 'Executive Administration', 'HR Specialist', 'HR Manager', 'ACTIVE', '2021-08-30'),
   ('22222222-0000-4000-8000-000000000011', '00000000-0000-0000-0000-000000000001'::uuid, 'EMP-111', 'Vaibhav Ahire', 'vaibhav.ahire@avenuebuilders.in', '+91 98220 41011', 'Property & Facility', 'Site Engineer', 'Facility Manager', 'ACTIVE', '2022-07-04'),
-  ('22222222-0000-4000-8000-000000000012', '00000000-0000-0000-0000-000000000001'::uuid, 'EMP-112', 'Shruti Bagul', 'shruti.bagul@avenuebuilders.in', '+91 98220 41012', 'Sales & Customer Relations', 'Sales Manager', 'CRM Executive', 'ACTIVE', '2023-01-09');
+  ('22222222-0000-4000-8000-000000000012', '00000000-0000-0000-0000-000000000001'::uuid, 'EMP-112', 'Shruti Bagul', 'shruti.bagul@avenuebuilders.in', '+91 98220 41012', 'Sales & Customer Relations', 'Sales Manager', 'CRM Executive', 'ACTIVE', '2023-01-09')
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO hr_employees (
   tenant_id, full_name, designation, department, site_location, workforce_type,
