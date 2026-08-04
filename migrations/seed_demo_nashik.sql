@@ -362,12 +362,449 @@ DROP TABLE IF EXISTS support_tickets CASCADE;
 CREATE TABLE support_tickets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL,
+  ticket_code VARCHAR(100),
   ticket_reference VARCHAR(100),
   customer_name VARCHAR(255),
-  category VARCHAR(100),
-  priority VARCHAR(50),
   subject VARCHAR(255),
+  category VARCHAR(100),
+  assigned_department VARCHAR(100),
+  priority VARCHAR(50),
+  sla_status VARCHAR(100),
   status VARCHAR(50),
+  claim_amount NUMERIC(15, 2) DEFAULT 0,
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS master_catalog_options CASCADE;
+CREATE TABLE master_catalog_options (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  category VARCHAR(100),
+  option_value VARCHAR(255),
+  sort_order INT,
+  CONSTRAINT uq_catalog_option UNIQUE (tenant_id, category, option_value)
+);
+
+DROP TABLE IF EXISTS chat_messages CASCADE;
+DROP TABLE IF EXISTS chat_channels CASCADE;
+DROP TABLE IF EXISTS customer_timelines CASCADE;
+DROP TABLE IF EXISTS communications_approvals CASCADE;
+DROP TABLE IF EXISTS communications_integrations CASCADE;
+
+CREATE TABLE chat_channels (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  channel_name VARCHAR(100),
+  department VARCHAR(100),
+  description TEXT,
+  is_private BOOLEAN DEFAULT false,
+  member_count INT DEFAULT 0,
+  last_activity TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  channel_id UUID REFERENCES chat_channels(id) ON DELETE CASCADE,
+  sender_name VARCHAR(255),
+  sender_role VARCHAR(100),
+  content TEXT,
+  is_pinned BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE customer_timelines (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  customer_name VARCHAR(255),
+  unit_number VARCHAR(50),
+  interaction_type VARCHAR(100),
+  summary TEXT,
+  officer_name VARCHAR(255),
+  timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  event_title VARCHAR(255),
+  event_category VARCHAR(100),
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE communications_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  ticket_reference VARCHAR(100),
+  customer_name VARCHAR(255),
+  issue_summary TEXT,
+  campaign_name VARCHAR(255),
+  target_audience VARCHAR(100),
+  channel VARCHAR(50),
+  recipient_count INT,
+  estimated_cost NUMERIC(15, 2),
+  claim_amount NUMERIC(15, 2),
+  justification TEXT,
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE communications_integrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  provider_name VARCHAR(100),
+  service_name VARCHAR(100),
+  integration_type VARCHAR(50),
+  channel_type VARCHAR(100),
+  status VARCHAR(50),
+  dispatched_24h INT DEFAULT 0,
+  last_webhook_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  message_count INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS integration_connectors CASCADE;
+DROP TABLE IF EXISTS integration_logs CASCADE;
+DROP TABLE IF EXISTS integration_approvals CASCADE;
+DROP TABLE IF EXISTS hardware_workspace_integrations CASCADE;
+
+CREATE TABLE integration_connectors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  connector_name VARCHAR(100) UNIQUE,
+  system_type VARCHAR(100),
+  category VARCHAR(100),
+  sync_frequency VARCHAR(50),
+  health_status VARCHAR(50),
+  status VARCHAR(50),
+  last_sync_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  synced_vouchers_24h INT DEFAULT 0,
+  unreconciled_webhooks INT DEFAULT 0,
+  last_sync TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE integration_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  connector_name VARCHAR(100),
+  provider_name VARCHAR(100),
+  endpoint VARCHAR(255),
+  payload_type VARCHAR(100),
+  response_status VARCHAR(50),
+  action VARCHAR(100),
+  status VARCHAR(50),
+  latency_ms INT DEFAULT 0,
+  records_processed INT DEFAULT 0,
+  details TEXT,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE integration_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  connector_name VARCHAR(100),
+  integration_name VARCHAR(100),
+  action_type VARCHAR(100),
+  sync_amount NUMERIC(15, 2),
+  requested_by VARCHAR(255),
+  justification TEXT,
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE hardware_workspace_integrations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  integration_name VARCHAR(100),
+  device_name VARCHAR(255),
+  device_type VARCHAR(100),
+  category VARCHAR(100),
+  location VARCHAR(255),
+  status VARCHAR(50),
+  synced_documents_or_logs INT DEFAULT 0,
+  last_sync_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  last_heartbeat TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS mcp_registered_tools CASCADE;
+DROP TABLE IF EXISTS mcp_agent_sessions CASCADE;
+DROP TABLE IF EXISTS mcp_execution_logs CASCADE;
+DROP TABLE IF EXISTS mcp_approvals CASCADE;
+
+CREATE TABLE mcp_registered_tools (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  tool_name VARCHAR(100) UNIQUE,
+  server_name VARCHAR(100),
+  target_module VARCHAR(100),
+  description TEXT,
+  is_mutative BOOLEAN DEFAULT false,
+  requires_hitl BOOLEAN DEFAULT false,
+  execution_count INT DEFAULT 0,
+  schema_input TEXT,
+  status VARCHAR(50)
+);
+
+CREATE TABLE mcp_agent_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  session_reference VARCHAR(100),
+  agent_title VARCHAR(100),
+  agent_role VARCHAR(100),
+  assigned_scope VARCHAR(100),
+  origin_ip VARCHAR(50),
+  permission_level VARCHAR(50),
+  last_ping TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  session_status VARCHAR(50),
+  status VARCHAR(50),
+  started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE mcp_execution_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  agent_title VARCHAR(100),
+  tool_name VARCHAR(100),
+  invoked_tool VARCHAR(100),
+  parameters_summary TEXT,
+  execution_status VARCHAR(50),
+  status VARCHAR(50),
+  latency_ms INT DEFAULT 0,
+  duration_ms INT DEFAULT 0,
+  details TEXT,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE mcp_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  agent_title VARCHAR(100),
+  invoked_tool VARCHAR(100),
+  action_name VARCHAR(100),
+  agent_id VARCHAR(100),
+  target_module VARCHAR(100),
+  parameters_summary TEXT,
+  justification TEXT,
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS ai_documents_legal CASCADE;
+DROP TABLE IF EXISTS ai_construction_safety CASCADE;
+DROP TABLE IF EXISTS ai_finance_procurement CASCADE;
+DROP TABLE IF EXISTS ai_risk_market CASCADE;
+DROP TABLE IF EXISTS ai_intelligence_approvals CASCADE;
+
+CREATE TABLE ai_documents_legal (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  document_title VARCHAR(255),
+  document_name VARCHAR(255),
+  document_type VARCHAR(100),
+  target_project_or_buyer VARCHAR(255),
+  verification_status VARCHAR(50),
+  analysis_summary TEXT,
+  summary_text TEXT,
+  risk_score INT DEFAULT 0,
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  generation_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ai_construction_safety (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  site_name VARCHAR(255),
+  camera_location VARCHAR(255),
+  incident_type VARCHAR(100),
+  risk_severity VARCHAR(50),
+  safety_score INT DEFAULT 0,
+  risk_level VARCHAR(50),
+  labor_count INT DEFAULT 0,
+  projected_schedule_delay_days INT DEFAULT 0,
+  recommendations TEXT,
+  timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ai_finance_procurement (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  analysis_title VARCHAR(255),
+  item_name VARCHAR(255),
+  suggested_vendor_name VARCHAR(255),
+  historical_quote_amount NUMERIC(15, 2),
+  recommended_allocation_amount NUMERIC(15, 2),
+  savings_percentage NUMERIC(5, 2),
+  cash_burn_trajectory VARCHAR(50),
+  anomaly_count INT DEFAULT 0,
+  potential_savings NUMERIC(15, 2),
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ai_risk_market (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  zone VARCHAR(100),
+  commodity_name VARCHAR(255),
+  current_market_index_price NUMERIC(15, 2),
+  price_trend_recommendation VARCHAR(50),
+  fraud_anomaly_score INT DEFAULT 0,
+  customer_sentiment_score INT DEFAULT 0,
+  signal_amount NUMERIC(15, 2),
+  summary TEXT,
+  price_trend VARCHAR(50),
+  demand_index INT DEFAULT 0,
+  risk_level VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE ai_intelligence_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  title VARCHAR(255),
+  category VARCHAR(100),
+  target_reference VARCHAR(100),
+  insight_title VARCHAR(255),
+  recommended_action TEXT,
+  amount NUMERIC(15, 2),
+  impact_amount NUMERIC(15, 2),
+  justification TEXT,
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS analytics_liquidity CASCADE;
+DROP TABLE IF EXISTS enterprise_risks CASCADE;
+DROP TABLE IF EXISTS capital_allocation_requests CASCADE;
+DROP TABLE IF EXISTS security_override_requests CASCADE;
+DROP TABLE IF EXISTS user_role_approvals CASCADE;
+DROP TABLE IF EXISTS audit_trail_logs CASCADE;
+DROP TABLE IF EXISTS event_stream_logs CASCADE;
+DROP TABLE IF EXISTS system_notifications CASCADE;
+
+CREATE TABLE analytics_liquidity (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  period VARCHAR(50),
+  operating_period VARCHAR(50),
+  customer_inflows_lakhs NUMERIC(15, 2),
+  vendor_outflows_lakhs NUMERIC(15, 2),
+  debt_service_lakhs NUMERIC(15, 2),
+  net_operating_cashflow_lakhs NUMERIC(15, 2),
+  dscr_ratio NUMERIC(5, 2),
+  solvency_status VARCHAR(50),
+  cash_inflow NUMERIC(15, 2),
+  cash_outflow NUMERIC(15, 2),
+  net_liquidity NUMERIC(15, 2),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE enterprise_risks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  risk_title VARCHAR(255),
+  risk_category VARCHAR(100),
+  associated_project_site VARCHAR(255),
+  risk_vector_summary TEXT,
+  impact_rating VARCHAR(50),
+  mitigation_action_plan TEXT,
+  category VARCHAR(100),
+  impact VARCHAR(50),
+  probability VARCHAR(50),
+  risk_level VARCHAR(50),
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE capital_allocation_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  request_reference VARCHAR(100),
+  project_name VARCHAR(255),
+  requested_capital_lakhs NUMERIC(15, 2),
+  requested_amount NUMERIC(15, 2),
+  allocation_purpose TEXT,
+  justification TEXT,
+  risk_rating VARCHAR(50),
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE security_override_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  request_reference VARCHAR(100),
+  request_title VARCHAR(255),
+  requesting_admin_name VARCHAR(255),
+  modification_type VARCHAR(100),
+  target_user_or_policy VARCHAR(255),
+  justification TEXT,
+  requested_by VARCHAR(255),
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE user_role_approvals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  target_user_name VARCHAR(255),
+  user_email VARCHAR(255),
+  requested_role VARCHAR(100),
+  requested_financial_limit NUMERIC(15, 2),
+  justification TEXT,
+  status VARCHAR(50),
+  requires_hitl BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE audit_trail_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  officer_name VARCHAR(255),
+  user_email VARCHAR(255),
+  module_executed VARCHAR(100),
+  action_type VARCHAR(100),
+  action VARCHAR(255),
+  module VARCHAR(100),
+  target_description TEXT,
+  ip_address VARCHAR(50),
+  security_verified BOOLEAN DEFAULT false,
+  timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE event_stream_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  event_name VARCHAR(100),
+  event_type VARCHAR(100),
+  origin_module VARCHAR(100),
+  target_module VARCHAR(100),
+  payload_summary TEXT,
+  payload_json JSONB,
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE system_notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  src_module VARCHAR(100),
+  user_type VARCHAR(100),
+  type VARCHAR(100),
+  description TEXT,
+  action_link VARCHAR(255),
+  priority VARCHAR(50),
+  is_read BOOLEAN DEFAULT false,
+  timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
