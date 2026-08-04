@@ -17,18 +17,18 @@ BEGIN;
 DO $$
 DECLARE
     tbl text;
-    i int;
 BEGIN
-    FOR i IN 1..3 LOOP
-        FOR tbl IN
-            SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-        LOOP
-            BEGIN
-                EXECUTE format('DELETE FROM %I WHERE tenant_id = %L::uuid', tbl, '00000000-0000-0000-0000-000000000001');
-            EXCEPTION WHEN OTHERS THEN
-                NULL;
-            END;
-        END LOOP;
+    FOR tbl IN
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+          AND table_type = 'BASE TABLE'
+          AND table_name NOT IN ('tenant_profiles', 'security_policies', 'user_accounts', 'system_role_permissions', 'system_user_sessions')
+    LOOP
+        BEGIN
+            EXECUTE format('TRUNCATE TABLE %I CASCADE;', tbl);
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
     END LOOP;
 END $$;
 
