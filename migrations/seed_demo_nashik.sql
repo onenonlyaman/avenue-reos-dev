@@ -808,6 +808,149 @@ CREATE TABLE system_notifications (
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE customer_timelines ADD COLUMN IF NOT EXISTS unit_number VARCHAR(50);
+ALTER TABLE customer_timelines ADD COLUMN IF NOT EXISTS interaction_type VARCHAR(100);
+ALTER TABLE customer_timelines ADD COLUMN IF NOT EXISTS summary TEXT;
+ALTER TABLE customer_timelines ADD COLUMN IF NOT EXISTS officer_name VARCHAR(255);
+ALTER TABLE customer_timelines ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE hr_approvals ADD COLUMN IF NOT EXISTS type VARCHAR(100);
+ALTER TABLE hr_approvals ADD COLUMN IF NOT EXISTS reference_name VARCHAR(255);
+ALTER TABLE hr_approvals ADD COLUMN IF NOT EXISTS amount NUMERIC(15, 2);
+ALTER TABLE hr_approvals ADD COLUMN IF NOT EXISTS justification TEXT;
+ALTER TABLE hr_approvals ADD COLUMN IF NOT EXISTS requested_by VARCHAR(255);
+ALTER TABLE hr_approvals ADD COLUMN IF NOT EXISTS requires_hitl BOOLEAN DEFAULT false;
+
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS ticket_reference VARCHAR(100);
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS ticket_code VARCHAR(100);
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS assigned_department VARCHAR(100);
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS claim_amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS requires_hitl BOOLEAN DEFAULT false;
+
+ALTER TABLE communications_approvals ADD COLUMN IF NOT EXISTS ticket_reference VARCHAR(100);
+ALTER TABLE communications_approvals ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
+ALTER TABLE communications_approvals ADD COLUMN IF NOT EXISTS issue_summary TEXT;
+ALTER TABLE communications_approvals ADD COLUMN IF NOT EXISTS claim_amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE communications_approvals ADD COLUMN IF NOT EXISTS justification TEXT;
+
+ALTER TABLE communications_integrations ADD COLUMN IF NOT EXISTS service_name VARCHAR(100);
+ALTER TABLE communications_integrations ADD COLUMN IF NOT EXISTS channel_type VARCHAR(100);
+ALTER TABLE communications_integrations ADD COLUMN IF NOT EXISTS dispatched_24h INT DEFAULT 0;
+ALTER TABLE communications_integrations ADD COLUMN IF NOT EXISTS last_webhook_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE integration_connectors ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE integration_connectors ADD COLUMN IF NOT EXISTS last_sync_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE integration_connectors ADD COLUMN IF NOT EXISTS synced_vouchers_24h INT DEFAULT 0;
+ALTER TABLE integration_connectors ADD COLUMN IF NOT EXISTS unreconciled_webhooks INT DEFAULT 0;
+
+ALTER TABLE hardware_workspace_integrations ADD COLUMN IF NOT EXISTS integration_name VARCHAR(100);
+ALTER TABLE hardware_workspace_integrations ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE hardware_workspace_integrations ADD COLUMN IF NOT EXISTS synced_documents_or_logs INT DEFAULT 0;
+ALTER TABLE hardware_workspace_integrations ADD COLUMN IF NOT EXISTS last_sync_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE integration_logs ADD COLUMN IF NOT EXISTS provider_name VARCHAR(100);
+ALTER TABLE integration_logs ADD COLUMN IF NOT EXISTS endpoint VARCHAR(255);
+ALTER TABLE integration_logs ADD COLUMN IF NOT EXISTS payload_type VARCHAR(100);
+ALTER TABLE integration_logs ADD COLUMN IF NOT EXISTS response_status VARCHAR(50);
+ALTER TABLE integration_logs ADD COLUMN IF NOT EXISTS latency_ms INT DEFAULT 0;
+
+ALTER TABLE integration_approvals ADD COLUMN IF NOT EXISTS sync_amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE integration_approvals ADD COLUMN IF NOT EXISTS justification TEXT;
+
+ALTER TABLE mcp_registered_tools ADD COLUMN IF NOT EXISTS target_module VARCHAR(100);
+ALTER TABLE mcp_registered_tools ADD COLUMN IF NOT EXISTS is_mutative BOOLEAN DEFAULT false;
+ALTER TABLE mcp_registered_tools ADD COLUMN IF NOT EXISTS execution_count INT DEFAULT 0;
+ALTER TABLE mcp_registered_tools ADD COLUMN IF NOT EXISTS schema_input TEXT;
+
+ALTER TABLE mcp_agent_sessions ADD COLUMN IF NOT EXISTS agent_title VARCHAR(100);
+ALTER TABLE mcp_agent_sessions ADD COLUMN IF NOT EXISTS assigned_scope VARCHAR(100);
+ALTER TABLE mcp_agent_sessions ADD COLUMN IF NOT EXISTS origin_ip VARCHAR(50);
+ALTER TABLE mcp_agent_sessions ADD COLUMN IF NOT EXISTS permission_level VARCHAR(50);
+ALTER TABLE mcp_agent_sessions ADD COLUMN IF NOT EXISTS last_ping TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE mcp_agent_sessions ADD COLUMN IF NOT EXISTS session_status VARCHAR(50);
+
+ALTER TABLE mcp_execution_logs ADD COLUMN IF NOT EXISTS agent_title VARCHAR(100);
+ALTER TABLE mcp_execution_logs ADD COLUMN IF NOT EXISTS invoked_tool VARCHAR(100);
+ALTER TABLE mcp_execution_logs ADD COLUMN IF NOT EXISTS parameters_summary TEXT;
+ALTER TABLE mcp_execution_logs ADD COLUMN IF NOT EXISTS latency_ms INT DEFAULT 0;
+
+ALTER TABLE mcp_approvals ADD COLUMN IF NOT EXISTS agent_title VARCHAR(100);
+ALTER TABLE mcp_approvals ADD COLUMN IF NOT EXISTS invoked_tool VARCHAR(100);
+ALTER TABLE mcp_approvals ADD COLUMN IF NOT EXISTS target_module VARCHAR(100);
+ALTER TABLE mcp_approvals ADD COLUMN IF NOT EXISTS parameters_summary TEXT;
+ALTER TABLE mcp_approvals ADD COLUMN IF NOT EXISTS justification TEXT;
+
+ALTER TABLE ai_documents_legal ADD COLUMN IF NOT EXISTS document_title VARCHAR(255);
+ALTER TABLE ai_documents_legal ADD COLUMN IF NOT EXISTS document_type VARCHAR(100);
+ALTER TABLE ai_documents_legal ADD COLUMN IF NOT EXISTS target_project_or_buyer VARCHAR(255);
+ALTER TABLE ai_documents_legal ADD COLUMN IF NOT EXISTS verification_status VARCHAR(50);
+ALTER TABLE ai_documents_legal ADD COLUMN IF NOT EXISTS summary_text TEXT;
+ALTER TABLE ai_documents_legal ADD COLUMN IF NOT EXISTS generation_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE ai_construction_safety ADD COLUMN IF NOT EXISTS camera_location VARCHAR(255);
+ALTER TABLE ai_construction_safety ADD COLUMN IF NOT EXISTS incident_type VARCHAR(100);
+ALTER TABLE ai_construction_safety ADD COLUMN IF NOT EXISTS risk_severity VARCHAR(50);
+ALTER TABLE ai_construction_safety ADD COLUMN IF NOT EXISTS labor_count INT DEFAULT 0;
+ALTER TABLE ai_construction_safety ADD COLUMN IF NOT EXISTS projected_schedule_delay_days INT DEFAULT 0;
+ALTER TABLE ai_construction_safety ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE ai_finance_procurement ADD COLUMN IF NOT EXISTS item_name VARCHAR(255);
+ALTER TABLE ai_finance_procurement ADD COLUMN IF NOT EXISTS suggested_vendor_name VARCHAR(255);
+ALTER TABLE ai_finance_procurement ADD COLUMN IF NOT EXISTS historical_quote_amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE ai_finance_procurement ADD COLUMN IF NOT EXISTS recommended_allocation_amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE ai_finance_procurement ADD COLUMN IF NOT EXISTS savings_percentage NUMERIC(5, 2) DEFAULT 0;
+ALTER TABLE ai_finance_procurement ADD COLUMN IF NOT EXISTS cash_burn_trajectory VARCHAR(50);
+
+ALTER TABLE ai_risk_market ADD COLUMN IF NOT EXISTS commodity_name VARCHAR(255);
+ALTER TABLE ai_risk_market ADD COLUMN IF NOT EXISTS current_market_index_price NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE ai_risk_market ADD COLUMN IF NOT EXISTS price_trend_recommendation VARCHAR(50);
+ALTER TABLE ai_risk_market ADD COLUMN IF NOT EXISTS fraud_anomaly_score INT DEFAULT 0;
+ALTER TABLE ai_risk_market ADD COLUMN IF NOT EXISTS customer_sentiment_score INT DEFAULT 0;
+ALTER TABLE ai_risk_market ADD COLUMN IF NOT EXISTS signal_amount NUMERIC(15, 2) DEFAULT 0;
+
+ALTER TABLE ai_intelligence_approvals ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+ALTER TABLE ai_intelligence_approvals ADD COLUMN IF NOT EXISTS target_reference VARCHAR(100);
+ALTER TABLE ai_intelligence_approvals ADD COLUMN IF NOT EXISTS amount NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE ai_intelligence_approvals ADD COLUMN IF NOT EXISTS justification TEXT;
+
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS operating_period VARCHAR(50);
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS customer_inflows_lakhs NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS vendor_outflows_lakhs NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS debt_service_lakhs NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS net_operating_cashflow_lakhs NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS dscr_ratio NUMERIC(5, 2) DEFAULT 0;
+ALTER TABLE analytics_liquidity ADD COLUMN IF NOT EXISTS solvency_status VARCHAR(50);
+
+ALTER TABLE enterprise_risks ADD COLUMN IF NOT EXISTS risk_category VARCHAR(100);
+ALTER TABLE enterprise_risks ADD COLUMN IF NOT EXISTS associated_project_site VARCHAR(255);
+ALTER TABLE enterprise_risks ADD COLUMN IF NOT EXISTS risk_vector_summary TEXT;
+ALTER TABLE enterprise_risks ADD COLUMN IF NOT EXISTS impact_rating VARCHAR(50);
+ALTER TABLE enterprise_risks ADD COLUMN IF NOT EXISTS mitigation_action_plan TEXT;
+
+ALTER TABLE capital_allocation_requests ADD COLUMN IF NOT EXISTS request_reference VARCHAR(100);
+ALTER TABLE capital_allocation_requests ADD COLUMN IF NOT EXISTS requested_capital_lakhs NUMERIC(15, 2) DEFAULT 0;
+ALTER TABLE capital_allocation_requests ADD COLUMN IF NOT EXISTS allocation_purpose TEXT;
+
+ALTER TABLE security_override_requests ADD COLUMN IF NOT EXISTS request_reference VARCHAR(100);
+ALTER TABLE security_override_requests ADD COLUMN IF NOT EXISTS requesting_admin_name VARCHAR(255);
+ALTER TABLE security_override_requests ADD COLUMN IF NOT EXISTS modification_type VARCHAR(100);
+ALTER TABLE security_override_requests ADD COLUMN IF NOT EXISTS target_user_or_policy VARCHAR(255);
+
+ALTER TABLE user_role_approvals ADD COLUMN IF NOT EXISTS target_user_name VARCHAR(255);
+ALTER TABLE user_role_approvals ADD COLUMN IF NOT EXISTS requested_financial_limit NUMERIC(15, 2) DEFAULT 0;
+
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS officer_name VARCHAR(255);
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS module_executed VARCHAR(100);
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS action_type VARCHAR(100);
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS target_description TEXT;
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50);
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS security_verified BOOLEAN DEFAULT false;
+ALTER TABLE audit_trail_logs ADD COLUMN IF NOT EXISTS timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE event_stream_logs ADD COLUMN IF NOT EXISTS event_name VARCHAR(100);
+ALTER TABLE event_stream_logs ADD COLUMN IF NOT EXISTS origin_module VARCHAR(100);
+ALTER TABLE event_stream_logs ADD COLUMN IF NOT EXISTS payload_summary TEXT;
+
 DROP TABLE IF EXISTS master_catalog_options CASCADE;
 CREATE TABLE master_catalog_options (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
