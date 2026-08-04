@@ -14,9 +14,6 @@
 BEGIN;
 
 -- ============================================================================
--- SECTION 1 - RESET OPERATING DATA
--- ============================================================================
-
 DO $$
 DECLARE
     tbl text;
@@ -31,6 +28,89 @@ BEGIN
         END;
     END LOOP;
 END $$;
+
+-- Ensure auxiliary tables exist before seeding
+CREATE TABLE IF NOT EXISTS tenant_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  organization_legal_name VARCHAR(255),
+  gstin_registration VARCHAR(100),
+  registered_address TEXT,
+  operational_timezone VARCHAR(100),
+  base_currency VARCHAR(20),
+  fiscal_year_cycle VARCHAR(50),
+  active_users_count INT DEFAULT 0,
+  active_site_accounts_count INT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS security_policies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  mfa_enforced BOOLEAN DEFAULT true,
+  whitelisted_ip_ranges TEXT[],
+  session_timeout_minutes INT DEFAULT 30,
+  password_rotation_days INT DEFAULT 90,
+  super_admin_elevation_hitl BOOLEAN DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS hr_employees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  full_name VARCHAR(255),
+  designation VARCHAR(100),
+  department VARCHAR(100),
+  site_location VARCHAR(255),
+  workforce_type VARCHAR(50),
+  status VARCHAR(50),
+  joining_date VARCHAR(50),
+  corporate_email VARCHAR(255),
+  contact_number VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS user_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  full_name VARCHAR(255),
+  corporate_email VARCHAR(255),
+  assigned_role VARCHAR(100),
+  department VARCHAR(100),
+  account_status VARCHAR(50),
+  last_active_date VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS system_role_permissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  role_name VARCHAR(100) UNIQUE,
+  can_read BOOLEAN DEFAULT true,
+  can_create BOOLEAN DEFAULT true,
+  can_update BOOLEAN DEFAULT true,
+  can_delete BOOLEAN DEFAULT false,
+  can_authorize_hitl BOOLEAN DEFAULT false
+);
+
+CREATE TABLE IF NOT EXISTS system_user_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  device_name VARCHAR(255),
+  ip_address VARCHAR(100),
+  is_current_device BOOLEAN DEFAULT false,
+  status VARCHAR(50),
+  last_active TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS finance_vouchers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  voucher_reference VARCHAR(100),
+  payee_name VARCHAR(255),
+  category VARCHAR(100),
+  amount NUMERIC(15, 2),
+  description TEXT,
+  requires_hitl BOOLEAN DEFAULT false,
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
 
 -- ============================================================================
 -- SECTION 2 - ORGANISATION PROFILE
