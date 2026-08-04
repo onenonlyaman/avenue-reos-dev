@@ -17,72 +17,20 @@ BEGIN;
 -- SECTION 1 - RESET OPERATING DATA
 -- ============================================================================
 
-DELETE FROM general_ledger_entries WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM budget_heads WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM sales_bookings WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM quality_ncr_reports WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM daily_progress_reports WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM contractor_ra_bills WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM construction_wbs_milestones WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM construction_sites WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM crm_leads WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_unit WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_cost_center WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_chart_of_accounts WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_customer WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_vendor WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_employee WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_project WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-
-DELETE FROM finance_vouchers WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM purchase_orders WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM goods_receipt_notes WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM warehouse_inventory WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM land_parcels WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM jda_contracts WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM rera_compliances WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM title_search_logs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM facility_assets WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM maintenance_tickets WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM unit_handovers WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM cam_invoices WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hr_employees WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hr_attendance_logs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hr_payroll_runs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hr_candidates WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hr_performance_goals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hr_approvals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM chat_messages WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM chat_channels WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM support_tickets WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM customer_timelines WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM communications_approvals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM communications_integrations WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM integration_connectors WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM integration_logs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM integration_approvals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM hardware_workspace_integrations WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM mcp_registered_tools WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM mcp_agent_sessions WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM mcp_execution_logs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM mcp_approvals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM ai_documents_legal WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM ai_construction_safety WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM ai_finance_procurement WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM ai_risk_market WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM ai_intelligence_approvals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM analytics_liquidity WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM enterprise_risks WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM capital_allocation_requests WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM security_override_requests WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM user_role_approvals WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM user_accounts WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM system_user_sessions WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM audit_trail_logs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM event_stream_logs WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM system_notifications WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM master_catalog_options WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
-DELETE FROM system_role_permissions WHERE tenant_id = '00000000-0000-0000-0000-000000000001'::uuid;
+DO $$
+DECLARE
+    tbl text;
+BEGIN
+    FOR tbl IN
+        SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+    LOOP
+        BEGIN
+            EXECUTE format('DELETE FROM %I WHERE tenant_id = %L::uuid', tbl, '00000000-0000-0000-0000-000000000001');
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+    END LOOP;
+END $$;
 
 -- ============================================================================
 -- SECTION 2 - ORGANISATION PROFILE
