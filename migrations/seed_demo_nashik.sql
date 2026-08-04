@@ -29,6 +29,15 @@ BEGIN
     END LOOP;
 END $$;
 
+ALTER TABLE sales_bookings DROP CONSTRAINT IF EXISTS sales_bookings_status_check;
+ALTER TABLE crm_leads DROP CONSTRAINT IF EXISTS crm_leads_status_check;
+ALTER TABLE construction_wbs_milestones DROP CONSTRAINT IF EXISTS construction_wbs_milestones_status_check;
+ALTER TABLE contractor_ra_bills DROP CONSTRAINT IF EXISTS contractor_ra_bills_status_check;
+ALTER TABLE budget_heads DROP CONSTRAINT IF EXISTS budget_heads_status_check;
+ALTER TABLE daily_progress_reports DROP CONSTRAINT IF EXISTS daily_progress_reports_status_check;
+ALTER TABLE quality_ncr_reports DROP CONSTRAINT IF EXISTS quality_ncr_reports_status_check;
+ALTER TABLE quality_ncr_reports DROP CONSTRAINT IF EXISTS quality_ncr_reports_defect_severity_check;
+
 -- Ensure auxiliary tables exist before seeding
 CREATE TABLE IF NOT EXISTS tenant_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
