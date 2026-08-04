@@ -347,9 +347,34 @@ CREATE TABLE hr_approvals (
   approval_reference VARCHAR(100),
   employee_name VARCHAR(255),
   approval_type VARCHAR(100),
+  type VARCHAR(100),
+  reference_name VARCHAR(255),
   details TEXT,
   status VARCHAR(50),
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS support_tickets CASCADE;
+CREATE TABLE support_tickets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  ticket_reference VARCHAR(100),
+  customer_name VARCHAR(255),
+  category VARCHAR(100),
+  priority VARCHAR(50),
+  subject VARCHAR(255),
+  status VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TABLE IF EXISTS master_catalog_options CASCADE;
+CREATE TABLE master_catalog_options (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL,
+  category VARCHAR(100),
+  option_value VARCHAR(255),
+  sort_order INT,
+  CONSTRAINT uq_catalog_option UNIQUE (tenant_id, category, option_value)
 );
 
 -- ============================================================================
