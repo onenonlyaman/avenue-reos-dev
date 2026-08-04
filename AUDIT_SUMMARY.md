@@ -160,6 +160,28 @@ currently a false green.
 
 ---
 
+## Executive Operating Console
+
+The dashboard route was rebuilt as `ExecutiveDashboardView` over four components
+(`DashboardHeaderBanner`, `DashboardKpiGrid`, `DepartmentNavigationGrid`) served by a new
+`/api/v1/dashboard/summary` endpoint and `services/dashboardApi.ts`.
+
+Every figure is computed live and tenant-scoped: pipeline demand from open lead budgets plus booked
+consideration, inventory realization from booked against registered units, committed liabilities from
+budget commitments plus open purchase orders, and pending authorizations counted across twelve
+governance queues. Empty registers render true zero values (`₹0.00 Cr`, `0.0%`, `0 Pending`); a failed
+load renders `CorporateEmptyState` with a retry rather than substituting figures.
+
+Implementation notes where the specification and the live schema differed:
+
+- The specification names a `property_units` table; the schema has no such table. Unit counts read
+  from `master_unit`, the register that actually holds tower inventory.
+- The specification filters approval queues on `status = 'PENDING'`; the queues store
+  `PENDING_APPROVAL`, `PENDING_BOARD_APPROVAL` and `PENDING_GOVERNANCE_APPROVAL`. All pending variants
+  are matched — the literal filter would have reported zero against 83 genuinely pending items.
+- Department navigation is defined once in `lib/departments.ts` and consumed by both the grid and the
+  active-department count, so the two can never disagree.
+
 ## Metrics
 
 | Measure | Result |
