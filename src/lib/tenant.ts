@@ -1,0 +1,6 @@
+export const ACTIVE_TENANT_ID =
+  process.env.NEXT_PUBLIC_AVENUE_TENANT_ID ||
+  process.env.AVENUE_TENANT_ID ||
+  "00000000-0000-0000-0000-000000000001";
+
+export const TENANT_HEADER_NAME = "X-Tenant-ID";

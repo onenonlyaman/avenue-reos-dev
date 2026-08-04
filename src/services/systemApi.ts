@@ -1,0 +1,133 @@
+import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+
+export interface ApiResponseEnvelope<T> {
+  success: boolean;
+  status_code: number;
+  timestamp: string;
+  request_id: string;
+  data: T | null;
+  error?: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  } | null;
+  meta?: {
+    page?: number;
+    limit?: number;
+    total_records?: number;
+  } | null;
+}
+
+export interface SystemStatus {
+  databaseStatus: "CONNECTED" | "DEGRADED" | "DISCONNECTED";
+  databaseLatencyMs: number;
+  eventStreamStatus: "OPERATIONAL" | "DEGRADED";
+  eventStreamLatencyMs: number;
+  totalActiveRoutes: number;
+  securityGateIntegrity: "ACTIVE" | "WARNING";
+  lastVerifiedUtc: string;
+}
+
+export interface DbHealthReport {
+  tenantIsolationEnforced: boolean;
+  totalTableCount: number;
+  connectionPoolActive: number;
+  connectionPoolMax: number;
+  migrationStatus: "UP_TO_DATE" | "PENDING";
+  avgQueryResponseTimeMs: number;
+}
+
+export interface HitlGateSummary {
+  financePendingCount: number;
+  constructionPendingCount: number;
+  procurementPendingCount: number;
+  facilityPendingCount: number;
+  legalPendingCount: number;
+  boardPendingCount: number;
+  totalPendingHitl: number;
+}
+
+export interface EventStreamLog {
+  id: string;
+  eventName: string;
+  originModule: string;
+  targetModule: string;
+  payloadSummary: string;
+  timestamp: string;
+  status: "DELIVERED" | "PROCESSING" | "FAILED";
+}
+
+const API_BASE = "/api/v1/system";
+
+async function fetchEnvelope<T>(url: string, options?: RequestInit): Promise<T> {
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Tenant-ID": ACTIVE_TENANT_ID,
+    "X-Request-ID": `req-${Date.now()}`,
+    ...(options?.headers || {}),
+  };
+
+  const response = await fetch(url, { ...options, headers });
+  const envelope: ApiResponseEnvelope<T> = await response.json();
+
+  if (!envelope.success || envelope.error) {
+    throw new Error(envelope.error?.message || `Request failed with status ${envelope.status_code}`);
+  }
+
+  if (envelope.data === null || envelope.data === undefined) {
+    throw new Error("No record was returned");
+  }
+
+  return envelope.data;
+}
+
+export const systemApi = {
+  async getEventStreamLogs(): Promise<EventStreamLog[]> {
+    return fetchEnvelope<EventStreamLog[]>(`${API_BASE}/event-stream`);
+  },
+
+  async getSystemStatus(): Promise<SystemStatus> {
+    return fetchEnvelope<SystemStatus>(`${API_BASE}/status`);
+  },
+
+  async getDbHealth(): Promise<DbHealthReport> {
+    return fetchEnvelope<DbHealthReport>(`${API_BASE}/db-health`);
+  },
+
+  async getHitlSummary(): Promise<HitlGateSummary> {
+    const [finance, constr, proc, fac, leg, board] = await Promise.allSettled([
+      fetch("/api/v1/finance/approvals").then((r) => r.json()),
+      fetch("/api/v1/construction/ra-bills/pending").then((r) => r.json()),
+      fetch("/api/v1/procurement/approvals").then((r) => r.json()),
+      fetch("/api/v1/facility/approvals").then((r) => r.json()),
+      fetch("/api/v1/legal/approvals").then((r) => r.json()),
+      fetch("/api/v1/analytics/approvals").then((r) => r.json()),
+    ]);
+
+    const getCount = (res: PromiseSettledResult<any>) =>
+      res.status === "fulfilled" && res.value?.data ? res.value.data.length : 0;
+
+    const financePendingCount = getCount(finance);
+    const constructionPendingCount = getCount(constr);
+    const procurementPendingCount = getCount(proc);
+    const facilityPendingCount = getCount(fac);
+    const legalPendingCount = getCount(leg);
+    const boardPendingCount = getCount(board);
+
+    return {
+      financePendingCount,
+      constructionPendingCount,
+      procurementPendingCount,
+      facilityPendingCount,
+      legalPendingCount,
+      boardPendingCount,
+      totalPendingHitl:
+        financePendingCount +
+        constructionPendingCount +
+        procurementPendingCount +
+        facilityPendingCount +
+        legalPendingCount +
+        boardPendingCount,
+    };
+  },
+};

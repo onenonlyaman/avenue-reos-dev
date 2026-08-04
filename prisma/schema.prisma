@@ -1,0 +1,426 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PlatformAuditEntry {
+  id               String   @id @default(uuid()) @db.Uuid
+  timestamp        DateTime @default(now()) @db.Timestamptz
+  source           String   @db.VarChar(255)
+  dst              String   @db.VarChar(255)
+  protocol         String   @db.VarChar(50)
+  module           String   @db.VarChar(100)
+  submodule        String   @db.VarChar(100)
+  errorStatusCode  Int      @map("error_status_code")
+  sizeBytes        BigInt   @map("size_bytes")
+  tenantId         String   @map("tenant_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([timestamp(sort: Desc)])
+  @@index([module, submodule])
+  @@index([tenantId, errorStatusCode])
+  @@map("platform_audit_entries")
+}
+
+model SystemNotification {
+  id          String   @id @default(uuid()) @db.Uuid
+  timestamp   DateTime @default(now()) @db.Timestamptz
+  srcModule   String   @map("src_module") @db.VarChar(100)
+  userType    String   @map("user_type") @db.VarChar(255)
+  type        String   @db.VarChar(50)
+  description String   @db.Text
+  actionLink  String   @map("action_link") @db.VarChar(1024)
+  priority    String   @db.VarChar(20)
+  isRead      Boolean  @default(false) @map("is_read")
+  tenantId    String   @map("tenant_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, userType, isRead])
+  @@index([tenantId, priority])
+  @@map("system_notifications")
+}
+
+model MasterCustomer {
+  id            String         @id @default(uuid()) @db.Uuid
+  tenantId      String         @map("tenant_id") @db.Uuid
+  customerCode  String         @map("customer_code") @db.VarChar(100)
+  fullName      String         @map("full_name") @db.VarChar(255)
+  email         String         @db.VarChar(255)
+  phoneNumber   String         @map("phone_number") @db.VarChar(50)
+  taxIdentifier String?        @map("tax_identifier") @db.VarChar(100)
+  customerType  String         @map("customer_type") @db.VarChar(50)
+  status        String         @db.VarChar(50)
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  salesBookings SalesBooking[]
+
+  @@unique([tenantId, customerCode], name: "uq_customer_code")
+  @@index([tenantId, status])
+  @@map("master_customer")
+}
+
+model MasterProject {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  tenantId               String                     @map("tenant_id") @db.Uuid
+  projectCode            String                     @map("project_code") @db.VarChar(100)
+  projectName            String                     @map("project_name") @db.VarChar(255)
+  location               String                     @db.VarChar(255)
+  totalAreaSqft          Decimal                    @map("total_area_sqft") @db.Decimal(15, 2)
+  totalBudget            Decimal                    @map("total_budget") @db.Decimal(15, 2)
+  status                 String                     @db.VarChar(50)
+  startDate              DateTime                   @map("start_date") @db.Date
+  expectedCompletionDate DateTime                   @map("expected_completion_date") @db.Date
+  createdAt              DateTime                   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  units                  MasterUnit[]
+  costCenters            MasterCostCenter[]
+  wbsMilestones          ConstructionWbsMilestone[]
+  raBills                ContractorRaBill[]
+  constructionSites      ConstructionSite[]
+
+  @@unique([tenantId, projectCode], name: "uq_project_code")
+  @@index([tenantId, status])
+  @@map("master_project")
+}
+
+model MasterUnit {
+  id               String         @id @default(uuid()) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  projectId        String         @map("project_id") @db.Uuid
+  unitNumber       String         @map("unit_number") @db.VarChar(100)
+  towerName        String         @map("tower_name") @db.VarChar(100)
+  floorNumber      Int            @map("floor_number")
+  unitType         String         @map("unit_type") @db.VarChar(50)
+  carpetAreaSqft   Decimal        @map("carpet_area_sqft") @db.Decimal(10, 2)
+  basePrice        Decimal        @map("base_price") @db.Decimal(15, 2)
+  status           String         @db.VarChar(50)
+  typology         String?        @default("2 BHK Luxury Apartment") @db.VarChar(100)
+  balconySqft      Decimal?       @default(0.00) @map("balcony_sqft") @db.Decimal(10, 2)
+  floorRiseCharge  Decimal?       @default(0.00) @map("floor_rise_charge") @db.Decimal(12, 2)
+  facingDirection  String?        @default("East (Garden)") @map("facing_direction") @db.VarChar(100)
+  parkingBays      String?        @default("1 Covered Bay") @map("parking_bays") @db.VarChar(100)
+  reraDetails      String?        @default("Includes statutory structural warranty, fire safety compliance certification, and EV charging slot allocation.") @map("rera_details") @db.Text
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  project          MasterProject  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  salesBookings    SalesBooking[]
+
+  @@unique([tenantId, projectId, unitNumber], name: "uq_unit_number")
+  @@index([projectId])
+  @@index([tenantId, status])
+  @@map("master_unit")
+}
+
+model MasterVendor {
+  id                  String             @id @default(uuid()) @db.Uuid
+  tenantId            String             @map("tenant_id") @db.Uuid
+  vendorCode          String             @map("vendor_code") @db.VarChar(100)
+  companyName         String             @map("company_name") @db.VarChar(255)
+  contactPerson       String             @map("contact_person") @db.VarChar(255)
+  email               String             @db.VarChar(255)
+  phone               String             @db.VarChar(50)
+  vendorCategory      String             @map("vendor_category") @db.VarChar(100)
+  taxNumber           String?            @map("tax_number") @db.VarChar(100)
+  rating              Decimal?           @db.Decimal(3, 2)
+  status              String             @db.VarChar(50)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  qualityNcrReports   QualityNcrReport[]
+
+  @@unique([tenantId, vendorCode], name: "uq_vendor_code")
+  @@index([tenantId, status])
+  @@map("master_vendor")
+}
+
+model MasterEmployee {
+  id                  String               @id @default(uuid()) @db.Uuid
+  tenantId            String               @map("tenant_id") @db.Uuid
+  employeeCode        String               @map("employee_code") @db.VarChar(100)
+  fullName            String               @map("full_name") @db.VarChar(255)
+  email               String               @db.VarChar(255)
+  phone               String               @db.VarChar(50)
+  department          String               @db.VarChar(100)
+  role                String               @db.VarChar(100)
+  designation         String               @db.VarChar(100)
+  status              String               @db.VarChar(50)
+  joiningDate         DateTime             @map("joining_date") @db.Date
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  assignedLeads       CrmLead[]            @relation("AssignedRep")
+  repBookings         SalesBooking[]       @relation("SalesRep")
+  approvedBookings    SalesBooking[]       @relation("ApprovedBy")
+  constructionSites   ConstructionSite[]
+  dailyProgressReports DailyProgressReport[]
+  inspectedNcrs       QualityNcrReport[]
+
+  @@unique([tenantId, employeeCode], name: "uq_employee_code")
+  @@index([tenantId, status])
+  @@map("master_employee")
+}
+
+model MasterCostCenter {
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantId             String                @map("tenant_id") @db.Uuid
+  costCenterCode       String                @map("cost_center_code") @db.VarChar(100)
+  name                 String                @db.VarChar(255)
+  projectId            String?               @map("project_id") @db.Uuid
+  allocatedBudget      Decimal               @map("allocated_budget") @db.Decimal(15, 2)
+  status               String                @db.VarChar(50)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  project              MasterProject?        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  generalLedgerEntries GeneralLedgerEntry[]
+  budgetHeads          BudgetHead[]
+
+  @@unique([tenantId, costCenterCode], name: "uq_cost_center")
+  @@index([projectId])
+  @@index([tenantId, status])
+  @@map("master_cost_center")
+}
+
+model MasterChartOfAccounts {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  tenantId             String                  @map("tenant_id") @db.Uuid
+  accountCode          String                  @map("account_code") @db.VarChar(100)
+  accountName          String                  @map("account_name") @db.VarChar(255)
+  accountType          String                  @map("account_type") @db.VarChar(50)
+  parentAccountId      String?                 @map("parent_account_id") @db.Uuid
+  status               String                  @db.VarChar(50)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  parentAccount        MasterChartOfAccounts?  @relation("AccountHierarchy", fields: [parentAccountId], references: [id], onDelete: Restrict)
+  childAccounts        MasterChartOfAccounts[] @relation("AccountHierarchy")
+  generalLedgerEntries GeneralLedgerEntry[]
+
+  @@unique([tenantId, accountCode], name: "uq_account_code")
+  @@index([parentAccountId])
+  @@index([tenantId, status])
+  @@map("master_chart_of_accounts")
+}
+
+model CrmLead {
+  id                     String          @id @default(uuid()) @db.Uuid
+  tenantId               String          @map("tenant_id") @db.Uuid
+  leadCode               String          @map("lead_code") @db.VarChar(100)
+  fullName               String          @map("full_name") @db.VarChar(255)
+  email                  String          @db.VarChar(255)
+  phone                  String          @db.VarChar(50)
+  leadSource             String          @map("lead_source") @db.VarChar(100)
+  budgetMin              Decimal         @map("budget_min") @db.Decimal(15, 2)
+  budgetMax              Decimal         @map("budget_max") @db.Decimal(15, 2)
+  status                 String          @db.VarChar(50)
+  assignedRepId          String?         @map("assigned_rep_id") @db.Uuid
+  leadScore              Int?            @default(0) @map("lead_score")
+  interactionHistoryJson Json?           @map("interaction_history_json")
+  createdAt              DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  assignedRep            MasterEmployee? @relation("AssignedRep", fields: [assignedRepId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, leadCode], name: "uq_lead_code")
+  @@index([assignedRepId])
+  @@index([tenantId, status])
+  @@map("crm_leads")
+}
+
+model SalesBooking {
+  id                   String          @id @default(uuid()) @db.Uuid
+  tenantId             String          @map("tenant_id") @db.Uuid
+  bookingCode          String          @map("booking_code") @db.VarChar(100)
+  customerId           String          @map("customer_id") @db.Uuid
+  unitId               String          @map("unit_id") @db.Uuid
+  salesRepId           String          @map("sales_rep_id") @db.Uuid
+  agreedTotalPrice     Decimal         @map("agreed_total_price") @db.Decimal(15, 2)
+  bookingDepositAmount Decimal         @map("booking_deposit_amount") @db.Decimal(15, 2)
+  discountPercentage   Decimal?        @default(0.00) @map("discount_percentage") @db.Decimal(5, 2)
+  status               String          @db.VarChar(50)
+  approvedById         String?         @map("approved_by") @db.Uuid
+  paymentPlanJson      Json            @map("payment_plan_json")
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  customer             MasterCustomer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  unit                 MasterUnit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  salesRep             MasterEmployee  @relation("SalesRep", fields: [salesRepId], references: [id], onDelete: Restrict)
+  approvedBy           MasterEmployee? @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, bookingCode], name: "uq_booking_code")
+  @@index([customerId])
+  @@index([unitId])
+  @@index([salesRepId])
+  @@index([tenantId, status])
+  @@map("sales_bookings")
+}
+
+model GeneralLedgerEntry {
+  id                String                 @id @default(uuid()) @db.Uuid
+  tenantId          String                 @map("tenant_id") @db.Uuid
+  voucherNumber     String                 @map("voucher_number") @db.VarChar(100)
+  transactionDate   DateTime               @map("transaction_date") @db.Date
+  accountId         String                 @map("account_id") @db.Uuid
+  costCenterId      String?                @map("cost_center_id") @db.Uuid
+  debitAmount       Decimal                @default(0.00) @map("debit_amount") @db.Decimal(15, 2)
+  creditAmount      Decimal                @default(0.00) @map("credit_amount") @db.Decimal(15, 2)
+  narration         String                 @db.Text
+  sourceModule      String                 @map("source_module") @db.VarChar(100)
+  sourceReferenceId String?                @map("source_reference_id") @db.Uuid
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  account           MasterChartOfAccounts  @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  costCenter        MasterCostCenter?      @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+
+  @@index([accountId])
+  @@index([costCenterId])
+  @@index([tenantId, transactionDate(sort: Desc)])
+  @@map("general_ledger_entries")
+}
+
+model BudgetHead {
+  id                 String           @id @default(uuid()) @db.Uuid
+  tenantId           String           @map("tenant_id") @db.Uuid
+  budgetCode         String           @map("budget_code") @db.VarChar(100)
+  costCenterId       String           @map("cost_center_id") @db.Uuid
+  allocatedAmount    Decimal          @map("allocated_amount") @db.Decimal(15, 2)
+  committedAmount    Decimal          @default(0.00) @map("committed_amount") @db.Decimal(15, 2)
+  actualSpentAmount  Decimal          @default(0.00) @map("actual_spent_amount") @db.Decimal(15, 2)
+  fiscalYear         String           @map("fiscal_year") @db.VarChar(20)
+  status             String           @db.VarChar(50)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  costCenter         MasterCostCenter @relation(fields: [costCenterId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, budgetCode], name: "uq_budget_head")
+  @@index([costCenterId])
+  @@index([tenantId, status])
+  @@map("budget_heads")
+}
+
+model ConstructionWbsMilestone {
+  id                    String        @id @default(uuid()) @db.Uuid
+  tenantId              String        @map("tenant_id") @db.Uuid
+  projectId             String        @map("project_id") @db.Uuid
+  milestoneCode         String        @map("milestone_code") @db.VarChar(100)
+  executionPhase        String        @map("execution_phase") @db.VarChar(255)
+  milestoneTitle        String        @map("milestone_title") @db.VarChar(255)
+  phaseWeightagePct     Decimal       @default(25.00) @map("phase_weightage_pct") @db.Decimal(5, 2)
+  physicalCompletionPct Decimal       @default(0.00) @map("physical_completion_pct") @db.Decimal(5, 2)
+  targetStartDate       DateTime      @map("target_start_date") @db.Date
+  targetCompletionDate  DateTime      @map("target_completion_date") @db.Date
+  actualCompletionDate  DateTime?     @map("actual_completion_date") @db.Date
+  assignedContractor    String        @map("assigned_contractor") @db.VarChar(255)
+  financialAllocation   Decimal       @default(0.00) @map("financial_allocation") @db.Decimal(15, 2)
+  status                String        @db.VarChar(50)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  project               MasterProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, milestoneCode], name: "uq_wbs_code")
+  @@index([projectId])
+  @@index([tenantId, status])
+  @@map("construction_wbs_milestones")
+}
+
+model ContractorRaBill {
+  id                     String        @id @default(uuid()) @db.Uuid
+  tenantId               String        @map("tenant_id") @db.Uuid
+  projectId              String        @map("project_id") @db.Uuid
+  billReference          String        @map("bill_reference") @db.VarChar(100)
+  contractorName         String        @map("contractor_name") @db.VarChar(255)
+  wbsPhase               String        @map("wbs_phase") @db.VarChar(255)
+  grossClaimAmount       Decimal       @default(0.00) @map("gross_claim_amount") @db.Decimal(15, 2)
+  verifiedAmount         Decimal       @default(0.00) @map("verified_amount") @db.Decimal(15, 2)
+  retainedHoldbackAmount Decimal       @default(0.00) @map("retained_holdback_amount") @db.Decimal(15, 2)
+  gstAmount              Decimal       @default(0.00) @map("gst_amount") @db.Decimal(15, 2)
+  netPayableAmount       Decimal       @default(0.00) @map("net_payable_amount") @db.Decimal(15, 2)
+  claimedProgressPct     Decimal       @default(0.00) @map("claimed_progress_pct") @db.Decimal(5, 2)
+  verifiedProgressPct    Decimal       @default(0.00) @map("verified_progress_pct") @db.Decimal(5, 2)
+  requiresHitl           Boolean       @default(false) @map("requires_hitl")
+  status                 String        @db.VarChar(50)
+  rejectionReason        String?       @map("rejection_reason") @db.Text
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  project                MasterProject @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, billReference], name: "uq_ra_bill_ref")
+  @@index([projectId])
+  @@index([tenantId, status])
+  @@map("contractor_ra_bills")
+}
+
+model ConstructionSite {
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantId             String                @map("tenant_id") @db.Uuid
+  projectId            String                @map("project_id") @db.Uuid
+  siteCode             String                @map("site_code") @db.VarChar(100)
+  siteName             String                @map("site_name") @db.VarChar(255)
+  gpsCoordinates       String                @map("gps_coordinates") @db.VarChar(255)
+  status               String                @db.VarChar(50)
+  siteEngineerId       String                @map("site_engineer_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  project              MasterProject         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  siteEngineer         MasterEmployee        @relation(fields: [siteEngineerId], references: [id], onDelete: Restrict)
+  dailyProgressReports DailyProgressReport[]
+  qualityNcrReports    QualityNcrReport[]
+
+  @@unique([tenantId, siteCode], name: "uq_site_code")
+  @@index([projectId])
+  @@index([siteEngineerId])
+  @@index([tenantId, status])
+  @@map("construction_sites")
+}
+
+model DailyProgressReport {
+  id                  String           @id @default(uuid()) @db.Uuid
+  tenantId            String           @map("tenant_id") @db.Uuid
+  dpr_code            String           @db.VarChar(100)
+  siteId              String           @map("site_id") @db.Uuid
+  reportDate          DateTime         @map("report_date") @db.Date
+  submittedBy         String           @map("submitted_by") @db.Uuid
+  laborCount          Int              @map("labor_count")
+  weatherCondition    String           @map("weather_condition") @db.VarChar(100)
+  progressPercentage  Decimal          @map("progress_percentage") @db.Decimal(5, 2)
+  status              String           @db.VarChar(50)
+  workDetailsJson     Json             @map("work_details_json")
+  photosJson          Json?            @map("photos_json")
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  site                ConstructionSite @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  submittedByEmployee MasterEmployee   @relation(fields: [submittedBy], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, dpr_code], name: "uq_dpr_code")
+  @@index([siteId])
+  @@index([submittedBy])
+  @@index([tenantId, status])
+  @@map("daily_progress_reports")
+}
+
+model QualityNcrReport {
+  id                     String           @id @default(uuid()) @db.Uuid
+  tenantId               String           @map("tenant_id") @db.Uuid
+  ncrNumber              String           @map("ncr_number") @db.VarChar(100)
+  siteId                 String           @map("site_id") @db.Uuid
+  inspectorId            String           @map("inspector_id") @db.Uuid
+  contractorId           String?          @map("contractor_id") @db.Uuid
+  defectSeverity         String           @map("defect_severity") @db.VarChar(50)
+  status                 String           @db.VarChar(50)
+  description            String           @db.Text
+  correctiveAction       String?          @map("corrective_action") @db.Text
+  inspectionDetailsJson  Json?            @map("inspection_details_json")
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  site                   ConstructionSite @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  inspector              MasterEmployee   @relation(fields: [inspectorId], references: [id], onDelete: Restrict)
+  contractor             MasterVendor?    @relation(fields: [contractorId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, ncrNumber], name: "uq_ncr_number")
+  @@index([siteId])
+  @@index([inspectorId])
+  @@index([tenantId, status])
+  @@map("quality_ncr_reports")
+}

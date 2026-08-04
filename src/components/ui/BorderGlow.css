@@ -1,0 +1,76 @@
+.border-glow-wrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.border-glow-wrapper::before,
+.border-glow-wrapper::after {
+  content: "";
+  position: absolute;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.border-glow-wrapper.animated::before {
+  inset: -2px;
+  padding: 2px;
+  background: linear-gradient(
+    90deg,
+    #6366f1 0%,
+    #38bdf8 33%,
+    #a855f7 66%,
+    #6366f1 100%
+  );
+  background-size: 200% 200%;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: destination-out;
+  animation: border-glow-sweep 2s cubic-bezier(0.4, 0, 0.2, 1) 1 forwards;
+  opacity: 1;
+  z-index: 50;
+}
+
+.border-glow-wrapper.animated::after {
+  inset: -4px;
+  padding: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.6) 0%,
+    rgba(56, 189, 248, 0.6) 33%,
+    rgba(168, 85, 247, 0.6) 66%,
+    rgba(99, 102, 241, 0.6) 100%
+  );
+  background-size: 200% 200%;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: destination-out;
+  filter: blur(6px);
+  animation: border-glow-sweep 2s cubic-bezier(0.4, 0, 0.2, 1) 1 forwards;
+  opacity: 0.85;
+  z-index: 49;
+}
+
+@keyframes border-glow-sweep {
+  0% {
+    background-position: 0% 50%;
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
+  }
+  80% {
+    background-position: 200% 50%;
+    opacity: 0.9;
+  }
+  100% {
+    background-position: 200% 50%;
+    opacity: 0;
+  }
+}
