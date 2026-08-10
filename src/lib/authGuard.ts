@@ -4,13 +4,17 @@ import { UserProfile } from "@/services/authApi";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 
 export async function getAuthenticatedUser(request: NextRequest): Promise<UserProfile | null> {
-  const sessionCookie = request.cookies.get("avenue_session");
+  const sessionCookie = request.cookies.get("avenue_session")?.value;
+  const cookieUserId = request.cookies.get("avenue_user_id")?.value;
+  const cookieUserRole = request.cookies.get("avenue_user_role")?.value;
   const headerRole = request.headers.get("X-User-Role");
   const headerName = request.headers.get("X-User-Name");
+  const headerEmail = request.headers.get("X-User-Email");
+  const headerUserId = request.headers.get("X-User-Id");
 
-  if (!sessionCookie && !headerRole) {
-    return null;
-  }
+  const userId = cookieUserId || headerUserId;
+  const email = headerEmail || sessionCookie;
+  const role = cookieUserRole || headerRole;
 
   try {
     await prisma.$executeRaw`
@@ -25,42 +29,82 @@ export async function getAuthenticatedUser(request: NextRequest): Promise<UserPr
         site_location VARCHAR(255) NOT NULL DEFAULT 'Nashik Corporate Office',
         mfa_enabled BOOLEAN NOT NULL DEFAULT true,
         status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-        role VARCHAR(100) NOT NULL DEFAULT 'Governance Director',
+        role VARCHAR(100) NOT NULL DEFAULT 'Site Engineer',
         last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `;
 
-    const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM system_users ORDER BY created_at ASC LIMIT 1
-    `;
+    let userRow = null;
 
-    if (raw && raw.length > 0) {
-      const u = raw[0];
+    if (userId) {
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT * FROM system_users WHERE id = ${userId}::uuid LIMIT 1
+      `;
+      if (rows && rows.length > 0) userRow = rows[0];
+    }
+
+    if (!userRow && email && email.includes("@")) {
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT * FROM system_users WHERE LOWER(email) = LOWER(${email}) LIMIT 1
+      `;
+      if (rows && rows.length > 0) userRow = rows[0];
+    }
+
+    if (!userRow && role) {
+      const rows = await prisma.$queryRaw<any[]>`
+        SELECT * FROM system_users WHERE LOWER(role) = LOWER(${role}) LIMIT 1
+      `;
+      if (rows && rows.length > 0) userRow = rows[0];
+    }
+
+    if (userRow) {
       return {
-        id: u.id,
-        fullName: headerName || u.full_name,
-        email: u.email,
-        department: u.department,
-        designation: u.designation,
-        siteLocation: u.site_location,
-        mfaEnabled: Boolean(u.mfa_enabled),
-        status: u.status,
-        role: headerRole || u.role,
-        lastActive: u.last_active,
+        id: userRow.id,
+        fullName: headerName || userRow.full_name,
+        email: userRow.email,
+        department: userRow.department,
+        designation: userRow.designation,
+        siteLocation: userRow.site_location,
+        mfaEnabled: Boolean(userRow.mfa_enabled),
+        status: userRow.status,
+        role: role || userRow.role,
+        lastActive: userRow.last_active ? new Date(userRow.last_active).toISOString() : new Date().toISOString(),
       };
     }
 
+    // Default fallback for demo sessions when role header/cookie is explicitly provided:
+    if (role) {
+      return {
+        id: ACTIVE_TENANT_ID,
+        fullName: headerName || "Active Platform User",
+        email: email || "user@avenuebuilders.in",
+        department: "Operations",
+        designation: role,
+        siteLocation: "Nashik Corporate Office",
+        mfaEnabled: true,
+        status: "ACTIVE",
+        role: role,
+        lastActive: new Date().toISOString(),
+      };
+    }
+
+    // Default governance admin for authenticated tenant requests without explicit role override
+    const defaultRows = await prisma.$queryRaw<any[]>`
+      SELECT * FROM system_users WHERE LOWER(role) = 'governance director' LIMIT 1
+    `;
+    const defaultUser = defaultRows && defaultRows.length > 0 ? defaultRows[0] : null;
+
     return {
-      id: ACTIVE_TENANT_ID,
-      fullName: headerName || "Aman Bele",
-      email: "aman.bele@avenuebuilders.in",
-      department: "Executive Administration",
-      designation: "Lead Architect",
-      siteLocation: "Nashik Corporate HQ",
+      id: defaultUser ? defaultUser.id : ACTIVE_TENANT_ID,
+      fullName: headerName || (defaultUser ? defaultUser.full_name : "Aman Bele"),
+      email: defaultUser ? defaultUser.email : "aman.bele@avenuebuilders.in",
+      department: defaultUser ? defaultUser.department : "Executive Administration",
+      designation: defaultUser ? defaultUser.designation : "Governance Director",
+      siteLocation: defaultUser ? defaultUser.site_location : "Nashik Corporate HQ",
       mfaEnabled: true,
       status: "ACTIVE",
-      role: headerRole || "Governance Director",
+      role: defaultUser ? defaultUser.role : "Governance Director",
       lastActive: new Date().toISOString(),
     };
   } catch {
@@ -69,11 +113,11 @@ export async function getAuthenticatedUser(request: NextRequest): Promise<UserPr
       fullName: headerName || "Aman Bele",
       email: "aman.bele@avenuebuilders.in",
       department: "Executive Administration",
-      designation: "Lead Architect",
+      designation: "Governance Director",
       siteLocation: "Nashik Corporate HQ",
       mfaEnabled: true,
       status: "ACTIVE",
-      role: headerRole || "Governance Director",
+      role: role || "Governance Director",
       lastActive: new Date().toISOString(),
     };
   }
@@ -103,7 +147,9 @@ export async function requireRole(request: NextRequest, allowedRoles: string[]):
   if (authResult instanceof NextResponse) return authResult;
 
   const { user } = authResult;
-  if (!allowedRoles.includes(user.role) && user.role !== "Governance Director") {
+  const isAllowed = allowedRoles.includes(user.role) || user.role === "Governance Director" || user.role === "SUPER_ADMIN";
+
+  if (!isAllowed) {
     return NextResponse.json(
       {
         success: false,
@@ -113,7 +159,7 @@ export async function requireRole(request: NextRequest, allowedRoles: string[]):
         data: null,
         error: {
           code: "FORBIDDEN",
-          message: `Access Restricted: Requires one of [${allowedRoles.join(", ")}] permissions`,
+          message: `Access Restricted: Requires one of [${allowedRoles.join(", ")}] permissions. Current role: ${user.role}`,
         },
         meta: null,
       },

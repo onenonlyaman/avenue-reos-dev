@@ -32,10 +32,21 @@ async function safeQuery<T>(run: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+async function checkTableExists(tableName: string): Promise<boolean> {
+  const result = await safeQuery(
+    () => prisma.$queryRawUnsafe<{ exists: boolean }[]>(`SELECT (to_regclass($1) IS NOT NULL) AS exists`, tableName),
+    []
+  );
+  return Boolean(result?.[0]?.exists);
+}
+
 async function loadAuthorizationQueues() {
   const queues: { label: string; pendingCount: number }[] = [];
 
   for (const queue of HITL_QUEUES) {
+    const exists = await checkTableExists(queue.table);
+    if (!exists) continue;
+
     const rows = await safeQuery(
       () =>
         prisma.$queryRawUnsafe<{ count: number }[]>(
@@ -58,10 +69,14 @@ async function loadAuthorizationQueues() {
 
 export async function GET() {
   try {
-    const qualifiedLeads = await prisma.crmLead.findMany({
-      where: { tenantId: ACTIVE_TENANT_ID, status: { notIn: CLOSED_LEAD_STATUSES } },
-      select: { budgetMax: true, leadSource: true, status: true },
-    });
+    const qualifiedLeads = await safeQuery(
+      () =>
+        prisma.crmLead.findMany({
+          where: { tenantId: ACTIVE_TENANT_ID, status: { notIn: CLOSED_LEAD_STATUSES } },
+          select: { budgetMax: true, leadSource: true, status: true },
+        }),
+      []
+    );
 
     const [
       bookedDemand,
@@ -73,41 +88,59 @@ export async function GET() {
       workforceCount,
       projectCount,
     ] = await Promise.all([
-      prisma.salesBooking.aggregate({
-        where: { tenantId: ACTIVE_TENANT_ID },
-        _sum: { agreedTotalPrice: true },
-        _count: true,
-      }),
-      prisma.masterUnit.count({ where: { tenantId: ACTIVE_TENANT_ID } }),
-      prisma.masterUnit.count({
-        where: { tenantId: ACTIVE_TENANT_ID, status: { in: BOOKED_UNIT_STATUSES } },
-      }),
-      prisma.budgetHead.aggregate({
-        where: { tenantId: ACTIVE_TENANT_ID },
-        _sum: { committedAmount: true, allocatedAmount: true, actualSpentAmount: true },
-      }),
-      prisma.crmLead.count({ where: { tenantId: ACTIVE_TENANT_ID } }),
-      prisma.masterCustomer.count({ where: { tenantId: ACTIVE_TENANT_ID } }),
       safeQuery(
         () =>
-          prisma.$queryRawUnsafe<{ count: number }[]>(
+          prisma.salesBooking.aggregate({
+            where: { tenantId: ACTIVE_TENANT_ID },
+            _sum: { agreedTotalPrice: true },
+            _count: true,
+          }),
+        { _sum: { agreedTotalPrice: null }, _count: 0 }
+      ),
+      safeQuery(() => prisma.masterUnit.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
+      safeQuery(
+        () =>
+          prisma.masterUnit.count({
+            where: { tenantId: ACTIVE_TENANT_ID, status: { in: BOOKED_UNIT_STATUSES } },
+          }),
+        0
+      ),
+      safeQuery(
+        () =>
+          prisma.budgetHead.aggregate({
+            where: { tenantId: ACTIVE_TENANT_ID },
+            _sum: { committedAmount: true, allocatedAmount: true, actualSpentAmount: true },
+          }),
+        { _sum: { committedAmount: null, allocatedAmount: null, actualSpentAmount: null } }
+      ),
+      safeQuery(() => prisma.crmLead.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
+      safeQuery(() => prisma.masterCustomer.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
+      safeQuery(
+        async () => {
+          const exists = await checkTableExists("hr_employees");
+          if (!exists) return [] as { count: number }[];
+          return prisma.$queryRawUnsafe<{ count: number }[]>(
             `SELECT COUNT(*)::int AS count FROM hr_employees WHERE tenant_id = $1::uuid AND status = 'ACTIVE'`,
             ACTIVE_TENANT_ID
-          ),
+          );
+        },
         [] as { count: number }[]
       ),
-      prisma.masterProject.count({ where: { tenantId: ACTIVE_TENANT_ID } }),
+      safeQuery(() => prisma.masterProject.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
     ]);
 
     const purchaseOrders = await safeQuery(
-      () =>
-        prisma.$queryRawUnsafe<{ committed: string | null; open_count: number }[]>(
+      async () => {
+        const exists = await checkTableExists("purchase_orders");
+        if (!exists) return [] as { committed: string | null; open_count: number }[];
+        return prisma.$queryRawUnsafe<{ committed: string | null; open_count: number }[]>(
           `SELECT COALESCE(SUM(order_value_amount), 0)::text AS committed, COUNT(*)::int AS open_count
            FROM purchase_orders
            WHERE tenant_id = $1::uuid AND status <> ALL($2::text[])`,
           ACTIVE_TENANT_ID,
           SETTLED_ORDER_STATUSES
-        ),
+        );
+      },
       [] as { committed: string | null; open_count: number }[]
     );
 
@@ -189,48 +222,70 @@ export async function GET() {
     );
 
     const claimRows = await safeQuery(
-      () =>
-        prisma.$queryRawUnsafe<{ status: string; count: number; value: string }[]>(
+      async () => {
+        const exists = await checkTableExists("contractor_ra_bills");
+        if (!exists) return [] as { status: string; count: number; value: string }[];
+        return prisma.$queryRawUnsafe<{ status: string; count: number; value: string }[]>(
           `SELECT status, COUNT(*)::int AS count, COALESCE(SUM(gross_claim_amount), 0)::text AS value
            FROM contractor_ra_bills WHERE tenant_id = $1::uuid GROUP BY 1 ORDER BY 2 DESC`,
           ACTIVE_TENANT_ID
-        ),
+        );
+      },
       [] as { status: string; count: number; value: string }[]
     );
 
     const ticketRows = await safeQuery(
-      () =>
-        prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
+      async () => {
+        const exists = await checkTableExists("support_tickets");
+        if (!exists) return [] as { status: string; count: number }[];
+        return prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
           `SELECT status, COUNT(*)::int AS count FROM support_tickets
            WHERE tenant_id = $1::uuid GROUP BY 1 ORDER BY 2 DESC`,
           ACTIVE_TENANT_ID
-        ),
+        );
+      },
       [] as { status: string; count: number }[]
     );
 
     const activityRows = await safeQuery(
-      () =>
-        prisma.$queryRawUnsafe<{ label: string; detail: string; category: string; occurred_at: Date }[]>(
-          `SELECT b.booking_code AS label,
-                  CONCAT(c.full_name, ' • ', u.tower_name, ' Unit ', u.unit_number) AS detail,
-                  'Booking' AS category,
-                  b.created_at AS occurred_at
-           FROM sales_bookings b
-           LEFT JOIN master_customer c ON c.id = b.customer_id
-           LEFT JOIN master_unit u ON u.id = b.unit_id
-           WHERE b.tenant_id = $1::uuid
-           UNION ALL
-           SELECT r.bill_reference, CONCAT(r.contractor_name, ' • ', r.wbs_phase), 'Contractor Claim', r.created_at
-           FROM contractor_ra_bills r WHERE r.tenant_id = $1::uuid
-           UNION ALL
-           SELECT l.lead_code, CONCAT(l.full_name, ' • ', l.lead_source), 'Prospect', l.created_at
-           FROM crm_leads l WHERE l.tenant_id = $1::uuid
-           UNION ALL
-           SELECT t.ticket_reference, CONCAT(t.customer_name, ' • ', t.subject), 'Support Ticket', t.created_at
-           FROM support_tickets t WHERE t.tenant_id = $1::uuid
-           ORDER BY occurred_at DESC LIMIT 10`,
+      async () => {
+        const hasTickets = await checkTableExists("support_tickets");
+        const hasBills = await checkTableExists("contractor_ra_bills");
+
+        let query = `
+          SELECT b.booking_code AS label,
+                 CONCAT(c.full_name, ' • ', u.tower_name, ' Unit ', u.unit_number) AS detail,
+                 'Booking' AS category,
+                 b.created_at AS occurred_at
+          FROM sales_bookings b
+          LEFT JOIN master_customer c ON c.id = b.customer_id
+          LEFT JOIN master_unit u ON u.id = b.unit_id
+          WHERE b.tenant_id = $1::uuid
+        `;
+
+        if (hasBills) {
+          query += `
+            UNION ALL
+            SELECT r.bill_reference, CONCAT(r.contractor_name, ' • ', r.wbs_phase), 'Contractor Claim', r.created_at
+            FROM contractor_ra_bills r WHERE r.tenant_id = $1::uuid
+          `;
+        }
+
+        if (hasTickets) {
+          query += `
+            UNION ALL
+            SELECT t.ticket_reference, CONCAT(t.customer_name, ' • ', t.subject), 'Support Ticket', t.created_at
+            FROM support_tickets t WHERE t.tenant_id = $1::uuid
+          `;
+        }
+
+        query += ` ORDER BY occurred_at DESC LIMIT 10`;
+
+        return prisma.$queryRawUnsafe<{ label: string; detail: string; category: string; occurred_at: Date }[]>(
+          query,
           ACTIVE_TENANT_ID
-        ),
+        );
+      },
       [] as { label: string; detail: string; category: string; occurred_at: Date }[]
     );
 
