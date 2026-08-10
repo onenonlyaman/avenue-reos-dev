@@ -1,4 +1,4 @@
-# Avenue Builders REOS — Schema-to-UI Gap Analysis
+# REOS REOS — Schema-to-UI Gap Analysis
 
 Scope: `apps/web` — 113 API routes, 24 pages, 133 components, PostgreSQL `avenue_reos`.
 Method: every route handler was cross-referenced against the tables it touches and against every

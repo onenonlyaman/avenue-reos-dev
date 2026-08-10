@@ -22,6 +22,7 @@ import {
   Building2,
   LogOut,
   UserCheck,
+  BookOpen,
 } from "lucide-react";
 import {
   Sidebar,
@@ -38,6 +39,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
+import { isRouteAllowedForRole } from "@/lib/permissions";
 
 const navigationCategories = [
   {
@@ -60,6 +62,12 @@ const navigationCategories = [
         href: "/finance",
         icon: DollarSign,
         badge: "Active",
+      },
+      {
+        name: "Tally ERP Subsystem",
+        href: "/finance/tally",
+        icon: BookOpen,
+        badge: "Tally",
       },
       {
         name: "Construction & Sites",
@@ -168,6 +176,13 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
 
+  const filteredCategories = navigationCategories
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => isRouteAllowedForRole(user?.role, item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
+
   return (
     <Sidebar className="border-r border-border bg-card text-card-foreground">
       <SidebarHeader className="h-12 border-b border-border px-3 flex items-center justify-between">
@@ -177,7 +192,7 @@ export function AppSidebar() {
           </div>
           <div className="flex flex-col min-w-0">
             <span className="font-bold text-xs tracking-tight text-foreground group-hover:text-primary transition-colors leading-none truncate">
-              Avenue Builders
+              REOS
             </span>
             <span className="text-[9px] text-muted-foreground font-medium leading-none mt-0.5 truncate">
               Real Estate Platform
@@ -187,7 +202,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="px-1.5 py-2 space-y-4">
-        {navigationCategories.map((group) => (
+        {filteredCategories.map((group) => (
           <SidebarGroup key={group.categoryName} className="p-0">
             <SidebarGroupLabel className="text-[10px] font-bold text-muted-foreground tracking-wider uppercase px-2.5 py-1 mb-1">
               {group.categoryName}

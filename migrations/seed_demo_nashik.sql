@@ -1,5 +1,5 @@
 -- ============================================================================
--- Avenue Builders REOS - Nashik Demonstration Dataset
+-- REOS REOS - Nashik Demonstration Dataset
 -- ============================================================================
 -- Populates every dashboard metric, chart and module register with coherent
 -- Nashik real estate operating data for a client walkthrough.
@@ -969,7 +969,7 @@ INSERT INTO tenant_profiles (
   tenant_id, organization_legal_name, gstin_registration, registered_address,
   operational_timezone, base_currency, fiscal_year_cycle, active_users_count, active_site_accounts_count
 ) VALUES (
-  '00000000-0000-0000-0000-000000000001'::uuid, 'Avenue Builders Pvt. Ltd.', '27AAACA4521R1ZP',
+  '00000000-0000-0000-0000-000000000001'::uuid, 'REOS Pvt. Ltd.', '27AAACA4521R1ZP',
   'Avenue House, Tidke Colony, Sharanpur Road, Nashik 422002, Maharashtra',
   'Asia/Kolkata', 'INR', 'April - March', 12, 4
 );

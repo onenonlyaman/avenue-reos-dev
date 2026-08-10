@@ -269,7 +269,7 @@ async function main() {
   if (JSON_OUTPUT) {
     console.log(JSON.stringify({ summary, routeChecks, gates }, null, 2));
   } else {
-    console.log("Avenue Builders REOS - System Audit");
+    console.log("REOS REOS - System Audit");
     console.log(`Target: ${BASE_URL}`);
     console.log("");
 

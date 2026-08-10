@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Avenue Builders - REOS",
+  title: "REOS - REOS",
   description: "Enterprise operating platform for developers, builders, contractors, finance teams, and executive management.",
 };
 

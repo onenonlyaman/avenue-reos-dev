@@ -14,7 +14,8 @@ const connectTimeoutSeconds = Number(process.env.DATABASE_CONNECT_TIMEOUT_SECOND
 
 function withPoolParameters(rawUrl: string): string {
   try {
-    const url = new URL(rawUrl);
+    const cleanedUrl = rawUrl.replace(/"/g, "").split("NEXT_PUBLIC")[0].trim();
+    const url = new URL(cleanedUrl);
     if (!url.searchParams.has("connection_limit")) {
       url.searchParams.set("connection_limit", String(connectionLimit));
     }

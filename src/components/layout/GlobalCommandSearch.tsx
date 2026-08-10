@@ -13,12 +13,16 @@ import { parseSearchQuery, SearchScope } from "@/lib/searchParser";
 import { searchApi, SearchResultItem } from "@/services/searchApi";
 import { SearchDetailDrawer } from "./SearchDetailDrawer";
 
+import { useAuth } from "@/context/AuthContext";
+import { isRouteAllowedForRole } from "@/lib/permissions";
+
 interface GlobalCommandSearchProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 export function GlobalCommandSearch({ isOpen, onClose }: GlobalCommandSearchProps) {
+  const { user } = useAuth();
   const [rawInput, setRawInput] = useState("");
   const [activeScopeTab, setActiveScopeTab] = useState<SearchScope | null>(null);
   const [results, setResults] = useState<SearchResultItem[]>([]);
@@ -157,12 +161,20 @@ export function GlobalCommandSearch({ isOpen, onClose }: GlobalCommandSearchProp
 
               {showPanels && (
                 <div className="max-h-96 overflow-y-auto p-2 space-y-1 bg-card">
-                  {results.length === 0 && !isLoading ? (
-                    <div className="p-8 text-center text-xs text-muted-foreground">
-                      No matching modules, records, or AI microservice results found.
-                    </div>
-                  ) : (
-                    results.map((item) => (
+                  {(() => {
+                    const filteredResults = results.filter(
+                      (item) => !item.href || isRouteAllowedForRole(user?.role, item.href)
+                    );
+
+                    if (filteredResults.length === 0 && !isLoading) {
+                      return (
+                        <div className="p-8 text-center text-xs text-muted-foreground">
+                          No matching modules, records, or AI microservice results found for your access role.
+                        </div>
+                      );
+                    }
+
+                    return filteredResults.map((item) => (
                       <div
                         key={item.id}
                         onClick={() => handleSelectItem(item)}
@@ -196,8 +208,8 @@ export function GlobalCommandSearch({ isOpen, onClose }: GlobalCommandSearchProp
                           <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                         </div>
                       </div>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </div>
               )}
             </div>

@@ -12,135 +12,28 @@
 # Error details
 
 ```
-Error: expect(locator).toBeVisible() failed
-
-Locator: locator('[role=\'dialog\'] input').first()
-Expected: visible
-Timeout: 10000ms
-Error: element(s) not found
-
+TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.
 Call log:
-  - Expect "toBeVisible" with timeout 10000ms
-  - waiting for locator('[role=\'dialog\'] input').first()
+  - waiting for locator('[data-testid=\'global-search-trigger\']') to be visible
 
 ```
 
+# Page snapshot
+
 ```yaml
-- link "AB Avenue Builders Real Estate Platform":
-  - /url: /
-- text: CORE OPERATIONS
-- list:
-  - listitem:
-    - button "Dashboard Overview Main":
-      - link "Dashboard Overview Main":
-        - /url: /
-  - listitem:
-    - button "CRM & Sales Active":
-      - link "CRM & Sales Active":
-        - /url: /crm
-  - listitem:
-    - button "Finance & Accounting Active":
-      - link "Finance & Accounting Active":
-        - /url: /finance
-  - listitem:
-    - button "Construction & Sites Active":
-      - link "Construction & Sites Active":
-        - /url: /construction
-  - listitem:
-    - button "Procurement & Materials Active":
-      - link "Procurement & Materials Active":
-        - /url: /procurement
-  - listitem:
-    - button "Property & Facility Active":
-      - link "Property & Facility Active":
-        - /url: /facility
-  - listitem:
-    - button "HR & Payroll Active":
-      - link "HR & Payroll Active":
-        - /url: /hr
-  - listitem:
-    - button "Team Communications Active":
-      - link "Team Communications Active":
-        - /url: /communications
-- text: GOVERNANCE & STRATEGY
-- list:
-  - listitem:
-    - button "Land & Regulatory Legal Active":
-      - link "Land & Regulatory Legal Active":
-        - /url: /legal
-  - listitem:
-    - button "Executive Analytics Active":
-      - link "Executive Analytics Active":
-        - /url: /analytics
-- text: AI & ECOSYSTEM
-- list:
-  - listitem:
-    - button "AI Agent Governance MCP":
-      - link "AI Agent Governance MCP":
-        - /url: /mcp
-  - listitem:
-    - button "Domain AI Services Active":
-      - link "Domain AI Services Active":
-        - /url: /ai-intelligence
-  - listitem:
-    - button "External Integrations Active":
-      - link "External Integrations Active":
-        - /url: /integrations
-- text: SYSTEM & IDENTITY
-- list:
-  - listitem:
-    - button "User Directory RBAC":
-      - link "User Directory RBAC":
-        - /url: /users
-  - listitem:
-    - button "My Profile Identity":
-      - link "My Profile Identity":
-        - /url: /profile
-  - listitem:
-    - button "System Administration Active":
-      - link "System Administration Active":
-        - /url: /settings
-  - listitem:
-    - button "System Diagnostics SRE":
-      - link "System Diagnostics SRE":
-        - /url: /system-status
-- text: AB Enterprise Account Avenue Group
-- button "Sign Out"
-- banner:
-  - button "Toggle Sidebar"
-  - separator
-  - navigation "breadcrumb":
-    - list:
-      - listitem:
-        - link "Avenue Builders":
-          - /url: /
-  - button "Search modules, records, AI ask... ⌘ K"
-  - button
-  - separator
-  - button "AB"
-- main:
-  - text: Avenue Builders • Nashik Real Estate Operations
-  - heading "Real Estate Operating Console" [level=1]
-  - text: Workflows Active Verified Account Sales Pipeline Demand Tower Inventory Realization Committed Budget Liabilities Automated HITL Approvals
-  - heading "Company Departments" [level=2]
-  - text: 6 Active Departments Active CRM & Sales Management Real Estate Sales
-  - link "Open Workspace":
-    - /url: /crm
-  - text: Active Finance & Accounting Financial Control
-  - link "Open Workspace":
-    - /url: /finance
-  - text: Active Construction & Sites Site Operations
-  - link "Open Workspace":
-    - /url: /construction
-  - text: Active Procurement & Materials Supply Chain
-  - link "Open Workspace":
-    - /url: /procurement-inventory
-  - text: Active HR & Payroll Staffing & Payroll
-  - link "Open Workspace":
-    - /url: /hr-payroll
-  - text: Active Team Communications Team Messaging
-  - link "Open Workspace":
-    - /url: /communications
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - heading "REOS System Authentication" [level=2] [ref=e10]
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - text: Phone Number or Email
+        - textbox "email@rachita.com" [ref=e16]
+      - generic [ref=e17]:
+        - text: Password
+        - textbox "**********" [ref=e22]
+      - button "Sign In to Dashboard" [ref=e23] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=e30] [cursor=pointer]
+  - alert [ref=e36]
 ```
 
 # Test source
@@ -166,12 +59,12 @@ Call log:
   18 |     await page.setViewportSize({ width: 1280, height: 800 });
   19 |     await page.goto("/", { waitUntil: "domcontentloaded" });
   20 | 
-  21 |     await page.waitForSelector("[data-testid='global-search-trigger']", { timeout: 10000 });
+> 21 |     await page.waitForSelector("[data-testid='global-search-trigger']", { timeout: 10000 });
+     |                ^ TimeoutError: page.waitForSelector: Timeout 10000ms exceeded.
   22 |     await page.keyboard.press("Control+k");
   23 | 
   24 |     const input = page.locator("[role='dialog'] input").first();
-> 25 |     await expect(input).toBeVisible({ timeout: 10000 });
-     |                         ^ Error: expect(locator).toBeVisible() failed
+  25 |     await expect(input).toBeVisible({ timeout: 10000 });
   26 |     await input.fill("ai: analyze steel price trend");
   27 | 
   28 |     const aiBadge = page.locator("text=AI AGENT MODE").first();

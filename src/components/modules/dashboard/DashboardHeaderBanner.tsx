@@ -11,7 +11,7 @@ export function DashboardHeaderBanner() {
         <div className="space-y-1.5 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded border border-border bg-muted text-muted-foreground text-xs">
             <Building2 className="h-3 w-3" />
-            <span>Avenue Builders • Nashik Real Estate Operations</span>
+            <span>REOS • Nashik Real Estate Operations</span>
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-foreground font-heading">

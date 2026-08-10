@@ -13,7 +13,7 @@ export async function GET() {
         record = await model.create({
           data: {
             tenantId: ACTIVE_TENANT_ID,
-            organizationLegalName: "Avenue Builders Pvt. Ltd.",
+            organizationLegalName: "REOS Pvt. Ltd.",
             gstinRegistration: "27AAAAA0000A1Z5",
             registeredAddress: "Gangapur Road, Nashik, Maharashtra 422013",
             operationalTimezone: "Asia/Kolkata (IST)",
@@ -53,7 +53,7 @@ export async function GET() {
               tenant_id, organization_legal_name, gstin_registration,
               registered_address, operational_timezone, base_currency, fiscal_year_cycle
             ) VALUES (
-              '00000000-0000-0000-0000-000000000001'::uuid, 'Avenue Builders Pvt. Ltd.', '27AAAAA0000A1Z5',
+              '00000000-0000-0000-0000-000000000001'::uuid, 'REOS Pvt. Ltd.', '27AAAAA0000A1Z5',
               'Gangapur Road, Nashik, Maharashtra 422013', 'Asia/Kolkata (IST)',
               'INR (₹)', 'April - March (India)'
             )
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
         upserted = await model.create({
           data: {
             tenantId,
-            organizationLegalName: organizationLegalName || "Avenue Builders Pvt. Ltd.",
+            organizationLegalName: organizationLegalName || "REOS Pvt. Ltd.",
             gstinRegistration: gstinRegistration || "27AAAAA0000A1Z5",
             registeredAddress: registeredAddress || "Gangapur Road, Nashik, Maharashtra 422013",
             operationalTimezone: operationalTimezone || "Asia/Kolkata (IST)",
@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
               tenant_id, organization_legal_name, gstin_registration,
               registered_address, operational_timezone, base_currency, fiscal_year_cycle
             ) VALUES (
-              ${tenantId}::uuid, ${organizationLegalName || "Avenue Builders Pvt. Ltd."}, ${gstinRegistration || "27AAAAA0000A1Z5"},
+              ${tenantId}::uuid, ${organizationLegalName || "REOS Pvt. Ltd."}, ${gstinRegistration || "27AAAAA0000A1Z5"},
               ${registeredAddress || "Gangapur Road, Nashik, Maharashtra 422013"}, ${operationalTimezone || "Asia/Kolkata (IST)"},
               ${baseCurrency || "INR (₹)"}, ${fiscalYearCycle || "April - March (India)"}
             )

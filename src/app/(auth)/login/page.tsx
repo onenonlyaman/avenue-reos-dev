@@ -46,7 +46,7 @@ function LoginForm() {
           <Building2 className="h-6 w-6" />
         </div>
         <h1 className="text-xl font-bold font-heading text-foreground">
-          Avenue Builders Executive Portal
+          REOS Executive Portal
         </h1>
       </div>
 

@@ -1,4 +1,4 @@
-# Avenue Builders REOS — Platform Audit Summary
+# REOS REOS — Platform Audit Summary
 
 Scope: `apps/web` — 114 API routes, 24 pages, 131 components, PostgreSQL `avenue_reos` (69 registers).
 Verification after every phase: `npx playwright test` — **93 passed**, five consecutive runs.

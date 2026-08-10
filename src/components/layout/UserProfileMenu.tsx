@@ -22,9 +22,17 @@ export function UserProfileMenu() {
     ? user.fullName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "AB";
 
+  const isSuperAdmin =
+    user?.role === "Super Admin" ||
+    user?.role === "SUPER_ADMIN" ||
+    user?.role === "Governance Director";
+
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger data-testid="user-profile-trigger" className={buttonVariants({ variant: "ghost", className: "relative h-8 w-8 rounded-full p-0 border border-border" })}>
+      <DropdownMenuTrigger
+        data-testid="user-profile-trigger"
+        className={buttonVariants({ variant: "ghost", className: "relative h-8 w-8 rounded-full p-0 border border-border" })}
+      >
         <Avatar className="h-8 w-8">
           <AvatarFallback className="bg-primary text-primary-foreground text-xs font-bold">
             {initials}
@@ -56,19 +64,23 @@ export function UserProfileMenu() {
             </Link>
           </DropdownMenuItem>
 
-          <DropdownMenuItem className="text-xs cursor-pointer p-0">
-            <Link href="/users" className="flex items-center w-full px-2 py-1.5">
-              <Shield className="mr-2 h-3.5 w-3.5" />
-              <span>Roles & Permissions</span>
-            </Link>
-          </DropdownMenuItem>
+          {isSuperAdmin && (
+            <>
+              <DropdownMenuItem className="text-xs cursor-pointer p-0">
+                <Link href="/users" className="flex items-center w-full px-2 py-1.5">
+                  <Shield className="mr-2 h-3.5 w-3.5" />
+                  <span>Roles & Permissions</span>
+                </Link>
+              </DropdownMenuItem>
 
-          <DropdownMenuItem className="text-xs cursor-pointer p-0">
-            <Link href="/settings" className="flex items-center w-full px-2 py-1.5">
-              <Settings className="mr-2 h-3.5 w-3.5" />
-              <span>Company Preferences</span>
-            </Link>
-          </DropdownMenuItem>
+              <DropdownMenuItem className="text-xs cursor-pointer p-0">
+                <Link href="/settings" className="flex items-center w-full px-2 py-1.5">
+                  <Settings className="mr-2 h-3.5 w-3.5" />
+                  <span>Company Preferences</span>
+                </Link>
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem
