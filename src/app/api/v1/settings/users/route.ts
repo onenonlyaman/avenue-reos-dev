@@ -1,216 +1,157 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { envelope, requireAdmin } from "@/lib/apiAccess";
+import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { checkPasswordPolicy, hashPassword } from "@/lib/password";
 
-async function ensureSeedUserAccounts() {
-  await prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS user_accounts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      tenant_id UUID NOT NULL,
-      full_name VARCHAR(255) NOT NULL,
-      corporate_email VARCHAR(255) NOT NULL,
-      assigned_role VARCHAR(100) NOT NULL,
-      department VARCHAR(100) NOT NULL,
-      account_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-      last_active_date VARCHAR(50) NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `;
+export const dynamic = "force-dynamic";
 
-  try {
-    await prisma.$executeRaw`
-      DELETE FROM user_accounts a
-      USING user_accounts b
-      WHERE a.created_at > b.created_at
-        AND LOWER(a.corporate_email) = LOWER(b.corporate_email)
-    `;
-  } catch {
-  }
+/**
+ * Settings view over the single user register.
+ *
+ * This endpoint previously read and wrote `user_accounts`, a table unconnected to the
+ * `system_users` register that authentication uses — so an account created here could
+ * never sign in — and it seeded six invented staff records into the database the first
+ * time anyone opened the page. Both behaviours are gone: this is a projection over
+ * `system_users`, and it creates nothing on read.
+ */
 
-  try {
-    await prisma.$executeRaw`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_email ON user_accounts (LOWER(corporate_email))
-    `;
-  } catch {
-  }
-
-  const existing = await prisma.$queryRaw<any[]>`
-    SELECT id FROM user_accounts WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1
-  `;
-
-  if (existing.length === 0) {
-    const tenantId = ACTIVE_TENANT_ID;
-    const today = new Date().toISOString().split("T")[0];
-
-    const seedAccounts = [
-      {
-        fullName: "Aman Bele",
-        corporateEmail: "aman.bele@avenuebuilders.in",
-        assignedRole: "Governance Director",
-        department: "Executive Administration",
-      },
-      {
-        fullName: "Rahul Sharma",
-        corporateEmail: "sales.executive@avenuebuilders.in",
-        assignedRole: "Sales Specialist",
-        department: "CRM & Sales",
-      },
-      {
-        fullName: "Priya Kulkarni",
-        corporateEmail: "finance.lead@avenuebuilders.in",
-        assignedRole: "Finance Lead",
-        department: "Finance & Accounting",
-      },
-      {
-        fullName: "Vikram Patil",
-        corporateEmail: "site.engineer@avenuebuilders.in",
-        assignedRole: "Site Engineer",
-        department: "Site Operations",
-      },
-      {
-        fullName: "Neha Deshmukh",
-        corporateEmail: "hr.lead@avenuebuilders.in",
-        assignedRole: "HR Lead",
-        department: "Workforce Ops",
-      },
-      {
-        fullName: "Suresh Mehta",
-        corporateEmail: "legal.lead@avenuebuilders.in",
-        assignedRole: "Legal Lead",
-        department: "Compliance & Land",
-      },
-    ];
-
-    for (const u of seedAccounts) {
-      try {
-        await prisma.$executeRaw`
-          INSERT INTO user_accounts (
-            tenant_id, full_name, corporate_email, assigned_role, department, account_status, last_active_date
-          ) VALUES (
-            ${tenantId}::uuid, ${u.fullName}, ${u.corporateEmail}, ${u.assignedRole}, ${u.department}, 'ACTIVE', ${today}
-          )
-          ON CONFLICT DO NOTHING
-        `;
-      } catch {
-      }
-    }
-  }
+interface UserRow {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  department: string;
+  status: string;
+  last_active: Date | null;
 }
 
-export async function GET() {
+function project(u: UserRow) {
+  return {
+    id: u.id,
+    fullName: u.full_name,
+    corporateEmail: u.email,
+    assignedRole: u.role,
+    department: u.department,
+    accountStatus: u.status,
+    lastActiveDate: u.last_active ? new Date(u.last_active).toISOString().split("T")[0] : null,
+  };
+}
+
+const SELECT_COLUMNS = "id, full_name, email, role, department, status, last_active";
+
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await ensureSeedUserAccounts();
-    const tenantId = ACTIVE_TENANT_ID;
+    const raw = await prisma.$queryRawUnsafe<UserRow[]>(
+      `SELECT ${SELECT_COLUMNS} FROM system_users WHERE tenant_id = $1::uuid ORDER BY created_at DESC`,
+      ACTIVE_TENANT_ID
+    );
 
-    const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM user_accounts WHERE tenant_id = ${tenantId}::uuid ORDER BY created_at DESC
-    `;
-
-    const mapped = (raw || []).map((r: any) => ({
-      id: r.id,
-      fullName: r.full_name || "",
-      corporateEmail: r.corporate_email || "",
-      assignedRole: r.assigned_role || "",
-      department: r.department || "",
-      accountStatus: r.account_status || "ACTIVE",
-      lastActiveDate: r.last_active_date || new Date().toISOString().split("T")[0],
-    }));
-
-    return NextResponse.json({
-      success: true,
-      status_code: 200,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: mapped,
-      error: null,
-      meta: { total_records: mapped.length },
-    });
-  } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
+    const mapped = raw.map(project);
+    return envelope(200, { data: mapped, meta: { total_records: mapped.length } });
+  } catch (err) {
+    console.error("[settings/users] list failed", err);
+    return envelope(503, {
       data: [],
-      error: {
-        code: "USERS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "User accounts could not be loaded",
-      },
+      error: { code: "USERS_UNAVAILABLE", message: "User accounts could not be loaded." },
       meta: { total_records: 0 },
     });
   }
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    await ensureSeedUserAccounts();
-    const body = await request.json();
-    const { fullName, corporateEmail, assignedRole, department } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
 
-    if (!fullName || !corporateEmail || !assignedRole) {
-      return NextResponse.json({
-        success: false,
-        status_code: 400,
-        timestamp: new Date().toISOString(),
-        request_id: `req-${Date.now()}`,
-        data: null,
-        error: { code: "MISSING_FIELDS", message: "Full name, corporate email, and role are required." },
-        meta: null,
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return envelope(400, {
+      error: { code: "MALFORMED_REQUEST", message: "Request body must be valid JSON." },
+    });
+  }
+
+  const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
+  const email =
+    typeof body.corporateEmail === "string" ? body.corporateEmail.trim().toLowerCase() : "";
+  const assignedRole = typeof body.assignedRole === "string" ? body.assignedRole.trim() : "";
+  const department =
+    typeof body.department === "string" && body.department.trim()
+      ? body.department.trim()
+      : "Operations";
+
+  if (!fullName || !email || !assignedRole) {
+    return envelope(400, {
+      error: {
+        code: "MISSING_FIELDS",
+        message: "Full name, corporate email and role are required.",
+      },
+    });
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 255) {
+    return envelope(400, {
+      error: { code: "INVALID_EMAIL", message: "Enter a valid corporate email address." },
+    });
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, assignedRole)) {
+    return envelope(400, {
+      error: {
+        code: "UNKNOWN_ROLE",
+        message: `"${assignedRole}" is not a role defined by this platform.`,
+      },
+    });
+  }
+
+  const policy = checkPasswordPolicy(body.initialPassword);
+  if (!policy.valid) {
+    return envelope(400, {
+      error: {
+        code: "WEAK_PASSWORD",
+        message: `An initial password is required. ${policy.message ?? ""}`.trim(),
+      },
+    });
+  }
+
+  try {
+    const passwordHash = await hashPassword(body.initialPassword as string);
+
+    const inserted = await prisma.$queryRawUnsafe<UserRow[]>(
+      `INSERT INTO system_users (
+         tenant_id, full_name, email, password_hash, department, designation,
+         role, status, mfa_enabled, must_reset_password, password_changed_at
+       ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'ACTIVE', false, false, NOW())
+       ON CONFLICT (email) DO NOTHING
+       RETURNING ${SELECT_COLUMNS}`,
+      ACTIVE_TENANT_ID,
+      fullName,
+      email,
+      passwordHash,
+      department,
+      assignedRole,
+      assignedRole
+    );
+
+    if (inserted.length === 0) {
+      return envelope(409, {
+        error: {
+          code: "EMAIL_ALREADY_REGISTERED",
+          message: "An account already exists for that email address.",
+        },
       });
     }
 
-    const inserted = await prisma.$queryRaw<any[]>`
-      INSERT INTO user_accounts (
-        tenant_id, full_name, corporate_email, assigned_role,
-        department, account_status, last_active_date
-      ) VALUES (
-        ${tenantId}::uuid, ${fullName}, ${corporateEmail}, ${assignedRole},
-        ${department || "Operations"}, 'ACTIVE', ${new Date().toISOString().split("T")[0]}
-      )
-      ON CONFLICT DO NOTHING
-      RETURNING *
-    `;
-
-    let created = inserted && inserted.length > 0 ? inserted[0] : null;
-
-    if (!created) {
-      const fetched = await prisma.$queryRaw<any[]>`
-        SELECT * FROM user_accounts WHERE LOWER(corporate_email) = LOWER(${corporateEmail}) LIMIT 1
-      `;
-      created = fetched[0];
-    }
-
-    return NextResponse.json({
-      success: true,
-      status_code: 201,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: {
-        id: created.id,
-        fullName: created.full_name,
-        corporateEmail: created.corporate_email,
-        assignedRole: created.assigned_role,
-        department: created.department,
-        accountStatus: created.account_status || "ACTIVE",
-        lastActiveDate: created.last_active_date,
-      },
-      error: null,
-      meta: null,
-    });
-  } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: null,
-      error: {
-        code: "USER_PROVISION_ERROR",
-        message: err instanceof Error ? err.message : "User account could not be saved",
-      },
-      meta: null,
+    return envelope(201, { data: project(inserted[0]) });
+  } catch (err) {
+    console.error("[settings/users] provisioning failed", err);
+    return envelope(503, {
+      error: { code: "USER_PROVISION_FAILED", message: "The user account could not be saved." },
     });
   }
 }

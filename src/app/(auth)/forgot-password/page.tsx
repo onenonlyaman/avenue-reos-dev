@@ -49,7 +49,9 @@ export default function ForgotPasswordPage() {
           <div className="text-center space-y-3">
             <CheckCircle2 className="h-8 w-8 text-emerald-700 mx-auto" />
             <p className="text-xs text-muted-foreground">
-              A secure password reset link has been dispatched to <span className="font-bold text-foreground">{email}</span>.
+              If <span className="font-bold text-foreground">{email}</span> belongs to an active
+              account, a reset token has been issued. Your administrator will provide the reset
+              link — this platform does not send email directly.
             </p>
             <Link href="/login">
               <Button size="sm" className="w-full text-xs font-semibold mt-2">

@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).capitalAllocationRequest;
     let records: any[] = [];
@@ -14,7 +18,7 @@ export async function GET() {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:capital_allocation_requests", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS capital_allocation_requests (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid,
@@ -28,7 +32,7 @@ export async function GET() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
 
         const raw = await prisma.$queryRaw<any[]>`
           SELECT * FROM capital_allocation_requests
@@ -70,10 +74,10 @@ export async function GET() {
       data: [],
       error: {
         code: "PENDING_BOARD_APPROVALS_ERROR",
-        message: err instanceof Error ? err.message : "Pending board approvals could not be loaded",
+        message: safeErrorMessage(err, "Pending board approvals could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 

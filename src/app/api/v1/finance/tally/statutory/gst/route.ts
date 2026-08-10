@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureGstTables() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_gstr_mismatches", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_gstr_mismatches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -16,10 +17,13 @@ async function ensureGstTables() {
       status VARCHAR(50) NOT NULL DEFAULT 'MISMATCH_FLAGGED',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureGstTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -82,14 +86,17 @@ export async function GET() {
       },
       error: {
         code: "GST_SUMMARY_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to fetch GST summary report",
+        message: safeErrorMessage(err, "Failed to fetch GST summary report"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { invoiceNumber } = body;
@@ -119,9 +126,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "EINVOICE_GENERATE_ERROR",
-        message: err instanceof Error ? err.message : "Failed to dispatch E-Invoice IRN request",
+        message: safeErrorMessage(err, "Failed to dispatch E-Invoice IRN request"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

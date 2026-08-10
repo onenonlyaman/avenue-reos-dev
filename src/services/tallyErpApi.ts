@@ -121,14 +121,13 @@ export interface BomRecipe {
 }
 
 export interface BankBrsResponse {
-  bankLedgerBalance: number;
-  passbookBalance: number;
+  importedNetAmount: number;
+  reconciledAmount: number;
   unreconciledChequesCount: number;
   matchedTransactionsCount: number;
-  cashInHandAmount: number;
   brsItems: {
     id: string;
-    transactionDate: string;
+    transactionDate: string | null;
     description: string;
     referenceNumber: string;
     amount: number;
@@ -279,8 +278,21 @@ class TallyErpApiService {
     return this.request<BankBrsResponse>("/api/v1/finance/tally/banking/e-brs");
   }
 
-  async uploadBankStatement(payload: { filename: string; rawData: string }): Promise<{ processedCount: number; matchedCount: number }> {
-    return this.request<{ processedCount: number; matchedCount: number }>("/api/v1/finance/tally/banking/e-brs", {
+  async uploadBankStatement(payload: {
+    filename: string;
+    rawData: string;
+  }): Promise<{
+    importedCount: number;
+    rejectedCount: number;
+    rejectedLines: string[];
+    reconciliationPerformed: boolean;
+  }> {
+    return this.request<{
+      importedCount: number;
+      rejectedCount: number;
+      rejectedLines: string[];
+      reconciliationPerformed: boolean;
+    }>("/api/v1/finance/tally/banking/e-brs", {
       method: "POST",
       body: JSON.stringify(payload),
     });

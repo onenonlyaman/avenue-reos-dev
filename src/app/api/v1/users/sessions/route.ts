@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureSessionRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:system_user_sessions", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS system_user_sessions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -14,10 +15,13 @@ async function ensureSessionRegister() {
       last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureSessionRegister();
 
@@ -56,14 +60,17 @@ export async function GET() {
       data: [],
       error: {
         code: "FETCH_SESSIONS_ERROR",
-        message: err instanceof Error ? err.message : "Active device register is temporarily unavailable",
+        message: safeErrorMessage(err, "Active device register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureSessionRegister();
 
@@ -91,9 +98,9 @@ export async function DELETE() {
       data: null,
       error: {
         code: "REVOKE_SESSIONS_ERROR",
-        message: err instanceof Error ? err.message : "Device revocation could not be completed",
+        message: safeErrorMessage(err, "Device revocation could not be completed"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_LAND_ACQUISITION_LIMIT, REGISTRATION_FEE_RATE, STAMP_DUTY_RATE } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).landParcel;
     let records: any[] = [];
@@ -70,14 +74,17 @@ export async function GET() {
       data: [],
       error: {
         code: "PARCELS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Land parcels could not be loaded",
+        message: safeErrorMessage(err, "Land parcels could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { parcelDescription, locationZone, plotAreaAcres, applicableFsi, baseLandValueAmount, titleStatus } = body;
@@ -92,7 +99,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Parcel description and location zone are required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const acres = Number(plotAreaAcres || 0);
@@ -130,7 +137,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:land_parcels", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS land_parcels (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -149,7 +156,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const inserted = await prisma.$queryRaw<any[]>`
           INSERT INTO land_parcels (
             tenant_id, parcel_reference, parcel_description, location_zone,
@@ -165,7 +172,7 @@ export async function POST(request: NextRequest) {
         `;
         created = inserted[0];
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Land parcel could not be saved");
+        throw new Error(safeErrorMessage(err, "Land parcel could not be saved"));
       }
     }
 
@@ -196,7 +203,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -206,10 +213,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "PARCEL_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Land acquisition proposal could not be saved",
+        message: safeErrorMessage(err, "Land acquisition proposal could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

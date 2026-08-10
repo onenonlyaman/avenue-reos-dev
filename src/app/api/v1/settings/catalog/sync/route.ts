@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureCatalogRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:master_catalog_options", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS master_catalog_options (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -15,7 +16,7 @@ async function ensureCatalogRegister() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT uq_catalog_option UNIQUE (tenant_id, category, option_value)
     )
-  `;
+  `);
 }
 
 async function distinctValues(sql: string): Promise<string[]> {
@@ -27,7 +28,10 @@ async function distinctValues(sql: string): Promise<string[]> {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureCatalogRegister();
 
@@ -125,9 +129,9 @@ export async function POST() {
       data: null,
       error: {
         code: "CATALOG_SYNC_ERROR",
-        message: err instanceof Error ? err.message : "Reference lists could not be imported from existing records",
+        message: safeErrorMessage(err, "Reference lists could not be imported from existing records"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q") || "";
@@ -144,10 +148,10 @@ export async function GET(request: NextRequest) {
       data: [],
       error: {
         code: "SEARCH_EXECUTION_ERROR",
-        message: err instanceof Error ? err.message : "Search could not be completed",
+        message: safeErrorMessage(err, "Search could not be completed"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 

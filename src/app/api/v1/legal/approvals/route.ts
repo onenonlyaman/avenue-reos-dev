@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).landParcel;
     let records: any[] = [];
@@ -72,10 +76,10 @@ export async function GET() {
       data: [],
       error: {
         code: "PENDING_LEGAL_APPROVALS_ERROR",
-        message: err instanceof Error ? err.message : "Pending legal committee approvals could not be loaded",
+        message: safeErrorMessage(err, "Pending legal committee approvals could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 

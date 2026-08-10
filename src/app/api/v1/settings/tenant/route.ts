@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).tenantProfile;
     let record: any = null;
@@ -26,7 +30,7 @@ export async function GET() {
       }
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:tenant_profiles", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS tenant_profiles (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -41,7 +45,7 @@ export async function GET() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const raw = await prisma.$queryRaw<any[]>`
           SELECT * FROM tenant_profiles WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1
         `;
@@ -108,14 +112,17 @@ export async function GET() {
       data: null,
       error: {
         code: "TENANT_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Tenant profile could not be loaded",
+        message: safeErrorMessage(err, "Tenant profile could not be loaded"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { organizationLegalName, gstinRegistration, registeredAddress, operationalTimezone, baseCurrency, fiscalYearCycle } = body;
@@ -155,7 +162,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:tenant_profiles", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS tenant_profiles (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -170,7 +177,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const raw = await prisma.$queryRaw<any[]>`SELECT * FROM tenant_profiles WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1`;
         if (raw && raw.length > 0) {
           const updated = await prisma.$queryRaw<any[]>`
@@ -201,7 +208,7 @@ export async function POST(request: NextRequest) {
           upserted = inserted[0];
         }
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Organisation profile could not be saved");
+        throw new Error(safeErrorMessage(err, "Organisation profile could not be saved"));
       }
     }
 
@@ -233,10 +240,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "TENANT_UPDATE_ERROR",
-        message: err instanceof Error ? err.message : "Tenant profile could not be saved",
+        message: safeErrorMessage(err, "Tenant profile could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureGodownTables() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_godowns", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_godowns (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -13,9 +14,9 @@ async function ensureGodownTables() {
       bin_number VARCHAR(100),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_stock_batches", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_stock_batches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -29,10 +30,13 @@ async function ensureGodownTables() {
       valuation_method VARCHAR(50) NOT NULL DEFAULT 'FIFO',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureGodownTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -90,14 +94,17 @@ export async function GET() {
       data: [],
       error: {
         code: "GODOWNS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to fetch godown stock levels",
+        message: safeErrorMessage(err, "Failed to fetch godown stock levels"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureGodownTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -124,7 +131,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "INVALID_STOCK_JOURNAL", message: "Valid item name and quantity required" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     if (sourceGodownId) {
@@ -169,7 +176,7 @@ export async function POST(request: NextRequest) {
       data: { stockJournalRef: ref },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -179,9 +186,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "STOCK_JOURNAL_ERROR",
-        message: err instanceof Error ? err.message : "Failed to record stock transfer journal",
+        message: safeErrorMessage(err, "Failed to record stock transfer journal"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

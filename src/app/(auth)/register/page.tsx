@@ -12,6 +12,8 @@ import { authApi } from "@/services/authApi";
 export default function RegisterPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [department, setDepartment] = useState("Engineering & Site Operations");
   const [designation, setDesignation] = useState("Project Manager");
   const [isLoading, setIsLoading] = useState(false);
@@ -24,11 +26,19 @@ export default function RegisterPage() {
       setError("Full name and official email address are required");
       return;
     }
+    if (!password || !confirmPassword) {
+      setError("Choose a password for the account");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
 
     try {
       setIsLoading(true);
       setError(null);
-      await authApi.register(fullName, email, department, designation);
+      await authApi.register({ fullName, email, password, department, designation });
       setIsSuccess(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Onboarding request could not be saved");
@@ -93,6 +103,31 @@ export default function RegisterPage() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@avenuebuilders.in"
               className="h-9 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">Password</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••••••"
+              className="h-9 text-xs font-mono"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              At least 12 characters, with upper and lower case, a digit and a symbol.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">Confirm Password</Label>
+            <Input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••••••"
+              className="h-9 text-xs font-mono"
             />
           </div>
 

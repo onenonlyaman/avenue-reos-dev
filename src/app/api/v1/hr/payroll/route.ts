@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_PAYROLL_LIMIT } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:hr_payroll_runs", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS hr_payroll_runs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -22,7 +26,7 @@ export async function GET() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM hr_payroll_runs WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC LIMIT 1
@@ -73,14 +77,17 @@ export async function GET() {
       data: null,
       error: {
         code: "PAYROLL_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Payroll cycle could not be loaded",
+        message: safeErrorMessage(err, "Payroll cycle could not be loaded"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { cycleMonth, totalGrossSalary, netPayable } = body;
@@ -94,7 +101,7 @@ export async function POST(request: NextRequest) {
     const requiresHitl = net > HITL_PAYROLL_LIMIT;
     const status = requiresHitl ? "PENDING_APPROVAL" : "DISBURSED";
 
-    await prisma.$executeRaw`
+    await runtimeDdl("table:hr_payroll_runs", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS hr_payroll_runs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -111,7 +118,7 @@ export async function POST(request: NextRequest) {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO hr_payroll_runs (
@@ -128,7 +135,7 @@ export async function POST(request: NextRequest) {
     const created = inserted[0];
 
     if (requiresHitl) {
-      await prisma.$executeRaw`
+      await runtimeDdl("table:hr_approvals", () => prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS hr_approvals (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id UUID NOT NULL,
@@ -141,7 +148,7 @@ export async function POST(request: NextRequest) {
           requires_hitl BOOLEAN NOT NULL DEFAULT true,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `;
+      `);
 
       await prisma.$executeRaw`
         INSERT INTO hr_approvals (
@@ -174,7 +181,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -184,10 +191,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "PAYROLL_RUN_ERROR",
-        message: err instanceof Error ? err.message : "Payroll run could not be completed",
+        message: safeErrorMessage(err, "Payroll run could not be completed"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

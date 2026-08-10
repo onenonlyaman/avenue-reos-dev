@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const grnModel = (prisma as any).goodsReceiptNote;
     let records: any[] = [];
@@ -55,14 +59,17 @@ export async function GET() {
       data: [],
       error: {
         code: "GRN_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Goods Receipt Notes could not be loaded",
+        message: safeErrorMessage(err, "Goods Receipt Notes could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { orderReference, warehouseName, vendorName, materialName, acceptedQuantity, rejectedQuantity, unitOfMeasure, gatepassNumber } = body;
@@ -77,7 +84,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Order reference, warehouse, and material name are required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const accepted = Number(acceptedQuantity || 0);
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:goods_receipt_notes", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS goods_receipt_notes (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -125,7 +132,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const inserted = await prisma.$queryRaw<any[]>`
           INSERT INTO goods_receipt_notes (
             tenant_id, grn_reference, order_reference, warehouse_name, vendor_name,
@@ -140,7 +147,7 @@ export async function POST(request: NextRequest) {
         `;
         created = inserted[0];
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Goods receipt note could not be saved");
+        throw new Error(safeErrorMessage(err, "Goods receipt note could not be saved"));
       }
     }
 
@@ -165,7 +172,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -175,10 +182,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "GRN_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Goods Receipt Note could not be saved",
+        message: safeErrorMessage(err, "Goods Receipt Note could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

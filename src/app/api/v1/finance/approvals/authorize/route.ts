@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const { bookingId, id } = body;
   const targetId = bookingId || id;
@@ -15,7 +19,7 @@ export async function POST(request: NextRequest) {
         request_id: `req-${Date.now()}`,
         data: null,
         error: { code: "MISSING_ID", message: "bookingId is required" },
-      });
+      }, { status: 400 });
     }
 
     const booking = await prisma.salesBooking.findUnique({
@@ -30,7 +34,7 @@ export async function POST(request: NextRequest) {
         request_id: `req-${Date.now()}`,
         data: null,
         error: { code: "BOOKING_NOT_FOUND", message: "Booking record not found" },
-      });
+      }, { status: 404 });
     }
 
     await prisma.$transaction([
@@ -65,8 +69,8 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "APPROVE_BOOKING_ERROR",
-        message: err instanceof Error ? err.message : "Booking could not be authorized",
+        message: safeErrorMessage(err, "Booking could not be authorized"),
       },
-    });
+    }, { status: 500 });
   }
 }

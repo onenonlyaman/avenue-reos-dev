@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const searchParams = request.nextUrl.searchParams;
   const search = searchParams.get("search")?.toLowerCase() || "";
   const status = searchParams.get("status");
@@ -79,14 +83,17 @@ export async function GET(request: NextRequest) {
       data: [],
       error: {
         code: "DB_FETCH_LEADS_ERROR",
-        message: err instanceof Error ? err.message : "Prospect register could not be loaded",
+        message: safeErrorMessage(err, "Prospect register could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const {
     name,
@@ -144,7 +151,7 @@ export async function POST(request: NextRequest) {
         createdDate: created.createdAt.toISOString().split("T")[0],
       },
       error: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -154,8 +161,8 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "DB_CREATE_LEAD_ERROR",
-        message: err instanceof Error ? err.message : "Prospect could not be saved",
+        message: safeErrorMessage(err, "Prospect could not be saved"),
       },
-    });
+    }, { status: 500 });
   }
 }

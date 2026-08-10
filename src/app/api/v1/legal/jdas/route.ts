@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).jdaContract;
     let records: any[] = [];
@@ -51,14 +55,17 @@ export async function GET() {
       data: [],
       error: {
         code: "JDAS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "JDA contracts could not be loaded",
+        message: safeErrorMessage(err, "JDA contracts could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { landownerName, projectSite, developerSharePct, landownerSharePct } = body;
@@ -73,7 +80,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Landowner name and project site are required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const devShare = Number(developerSharePct || 65);
@@ -98,7 +105,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:jda_contracts", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS jda_contracts (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -112,7 +119,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const inserted = await prisma.$queryRaw<any[]>`
           INSERT INTO jda_contracts (
             tenant_id, agreement_reference, landowner_name, project_site,
@@ -125,7 +132,7 @@ export async function POST(request: NextRequest) {
         `;
         created = inserted[0];
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Joint development agreement could not be saved");
+        throw new Error(safeErrorMessage(err, "Joint development agreement could not be saved"));
       }
     }
 
@@ -146,7 +153,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -156,10 +163,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "JDA_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Joint Development Agreement could not be saved",
+        message: safeErrorMessage(err, "Joint Development Agreement could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

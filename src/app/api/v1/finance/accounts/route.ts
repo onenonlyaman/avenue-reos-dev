@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const accounts = await prisma.masterChartOfAccounts.findMany({
       where: { tenantId: ACTIVE_TENANT_ID },
@@ -35,14 +39,17 @@ export async function GET() {
       data: [],
       error: {
         code: "FETCH_ACCOUNTS_ERROR",
-        message: err instanceof Error ? err.message : "Chart of accounts register is temporarily unavailable",
+        message: safeErrorMessage(err, "Chart of accounts register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { accountCode, accountName, accountType } = body;
@@ -59,7 +66,7 @@ export async function POST(request: NextRequest) {
           message: "Account code, account name and account class are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const created = await prisma.masterChartOfAccounts.create({
@@ -86,7 +93,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -96,9 +103,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "ACCOUNT_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Ledger account could not be saved",
+        message: safeErrorMessage(err, "Ledger account could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

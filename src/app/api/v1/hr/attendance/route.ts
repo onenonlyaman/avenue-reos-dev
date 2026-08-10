@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:hr_attendance_logs", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS hr_attendance_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -17,7 +21,7 @@ export async function GET() {
         status VARCHAR(50) NOT NULL DEFAULT 'PRESENT',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM hr_attendance_logs WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
@@ -52,19 +56,22 @@ export async function GET() {
       data: [],
       error: {
         code: "HR_ATTENDANCE_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Attendance logs could not be loaded",
+        message: safeErrorMessage(err, "Attendance logs could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const tenantId = ACTIVE_TENANT_ID;
 
-    await prisma.$executeRaw`
+    await runtimeDdl("table:hr_attendance_logs", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS hr_attendance_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -77,7 +84,7 @@ export async function POST(request: NextRequest) {
         status VARCHAR(50) NOT NULL DEFAULT 'PRESENT',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     if (body.action === "SYNC_BIOMETRICS") {
       const empRaw = await prisma.$queryRaw<any[]>`SELECT full_name, site_location FROM hr_employees WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 10`;
@@ -124,10 +131,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "BIOMETRIC_SYNC_ERROR",
-        message: err instanceof Error ? err.message : "Biometric logs could not be completed",
+        message: safeErrorMessage(err, "Biometric logs could not be completed"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

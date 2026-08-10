@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_DISBURSEMENT_LIMIT } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { amount, disbursementAmount, payeeName, category, description } = body;
@@ -22,14 +26,14 @@ export async function POST(request: NextRequest) {
           message: "A disbursement amount is required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const requiresHitl = numAmount > HITL_DISBURSEMENT_LIMIT;
     const status = requiresHitl ? "PENDING_APPROVAL" : "POSTED";
     const voucherRef = `VOUCHER-${Date.now().toString().slice(-6)}`;
 
-    await prisma.$executeRaw`
+    await runtimeDdl("table:finance_vouchers", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS finance_vouchers (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -42,7 +46,7 @@ export async function POST(request: NextRequest) {
         status VARCHAR(50) NOT NULL DEFAULT 'POSTED',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO finance_vouchers (
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -83,10 +87,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "VOUCHER_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Finance voucher could not be saved",
+        message: safeErrorMessage(err, "Finance voucher could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

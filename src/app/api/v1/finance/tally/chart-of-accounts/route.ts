@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureCoA() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_chart_of_accounts", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_chart_of_accounts (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -18,10 +19,13 @@ async function ensureCoA() {
       pan VARCHAR(20),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureCoA();
     const tenantId = ACTIVE_TENANT_ID;
@@ -64,14 +68,17 @@ export async function GET() {
       data: [],
       error: {
         code: "COA_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to fetch Chart of Accounts",
+        message: safeErrorMessage(err, "Failed to fetch Chart of Accounts"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureCoA();
     const tenantId = ACTIVE_TENANT_ID;
@@ -100,7 +107,7 @@ export async function POST(request: NextRequest) {
           message: "Primary group, subgroup, and ledger name are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const opBal = Number(openingBalance || 0);
@@ -137,7 +144,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -147,9 +154,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "COA_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Failed to create ledger account",
+        message: safeErrorMessage(err, "Failed to create ledger account"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

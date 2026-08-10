@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).analyticsLiquidity;
     let records: any[] = [];
@@ -63,14 +67,17 @@ export async function GET() {
       data: [],
       error: {
         code: "LIQUIDITY_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Liquidity cashflow metrics could not be loaded",
+        message: safeErrorMessage(err, "Liquidity cashflow metrics could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { operatingPeriod, customerInflowsLakhs, vendorOutflowsLakhs, debtServiceLakhs } = body;
@@ -85,7 +92,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Operating period is required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const inflows = Number(customerInflowsLakhs || 0);
@@ -116,7 +123,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:analytics_liquidity", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS analytics_liquidity (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -130,7 +137,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const inserted = await prisma.$queryRaw<any[]>`
           INSERT INTO analytics_liquidity (
             tenant_id, operating_period, customer_inflows_lakhs,
@@ -145,7 +152,7 @@ export async function POST(request: NextRequest) {
         `;
         created = inserted[0];
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Cash flow entry could not be saved");
+        throw new Error(safeErrorMessage(err, "Cash flow entry could not be saved"));
       }
     }
 
@@ -166,7 +173,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -176,10 +183,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "LIQUIDITY_SIMULATE_ERROR",
-        message: err instanceof Error ? err.message : "Cashflow scenario simulation could not be saved",
+        message: safeErrorMessage(err, "Cashflow scenario simulation could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

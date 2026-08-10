@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const tenantId = ACTIVE_TENANT_ID;
 
@@ -100,9 +104,9 @@ export async function GET() {
       },
       error: {
         code: "FINANCIAL_REPORTS_ERROR",
-        message: err instanceof Error ? err.message : "Failed to compile financial statements",
+        message: safeErrorMessage(err, "Failed to compile financial statements"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const { postingDate, accountHead, costCenter, debitAmount, creditAmount, documentRef } = body;
 
@@ -100,7 +104,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -110,8 +114,8 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "CREATE_JOURNAL_ENTRY_ERROR",
-        message: err instanceof Error ? err.message : "Journal entry could not be saved",
+        message: safeErrorMessage(err, "Journal entry could not be saved"),
       },
-    });
+    }, { status: 500 });
   }
 }

@@ -1,10 +1,14 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:communications_integrations", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS communications_integrations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -15,7 +19,7 @@ export async function GET() {
         last_webhook_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM communications_integrations WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
@@ -48,10 +52,10 @@ export async function GET() {
       data: [],
       error: {
         code: "COMMUNICATIONS_INTEGRATIONS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Communications integrations could not be loaded",
+        message: safeErrorMessage(err, "Communications integrations could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 

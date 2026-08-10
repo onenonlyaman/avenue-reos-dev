@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const bookings = await prisma.salesBooking.findMany({ where: { tenantId: ACTIVE_TENANT_ID },
       orderBy: { createdAt: "desc" },
@@ -53,14 +57,17 @@ export async function GET() {
       data: [],
       error: {
         code: "DB_FETCH_BOOKINGS_ERROR",
-        message: err instanceof Error ? err.message : "Sales bookings could not be loaded",
+        message: safeErrorMessage(err, "Sales bookings could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const {
     unitId,
@@ -105,7 +112,7 @@ export async function POST(request: NextRequest) {
             code: "CUSTOMER_NOT_IDENTIFIED",
             message: "A customer name or registered contact number is required to raise a booking",
           },
-        });
+        }, { status: 400 });
       }
 
       customer = await prisma.masterCustomer.create({
@@ -152,7 +159,7 @@ export async function POST(request: NextRequest) {
           code: "UNIT_NOT_FOUND",
           message: "The selected unit is not on record",
         },
-      });
+      }, { status: 404 });
     }
 
     const salesRep = salesRepName
@@ -175,7 +182,7 @@ export async function POST(request: NextRequest) {
           code: "SALES_REPRESENTATIVE_UNAVAILABLE",
           message: "No active sales representative is on record to own this booking",
         },
-      });
+      }, { status: 409 });
     }
 
     const bookingStatus = requiresHitl ? "PENDING_APPROVAL" : "CONFIRMED";
@@ -227,7 +234,7 @@ export async function POST(request: NextRequest) {
         requiresHitl,
       },
       error: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -237,8 +244,8 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "CREATE_BOOKING_ERROR",
-        message: err instanceof Error ? err.message : "Sales booking could not be saved",
+        message: safeErrorMessage(err, "Sales booking could not be saved"),
       },
-    });
+    }, { status: 500 });
   }
 }

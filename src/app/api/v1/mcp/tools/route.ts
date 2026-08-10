@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:mcp_registered_tools", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS mcp_registered_tools (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -17,7 +21,7 @@ export async function GET() {
         schema_input TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM mcp_registered_tools WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY tool_name ASC
@@ -52,10 +56,10 @@ export async function GET() {
       data: [],
       error: {
         code: "MCP_TOOLS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Registered agent tools could not be loaded",
+        message: safeErrorMessage(err, "Registered agent tools could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 

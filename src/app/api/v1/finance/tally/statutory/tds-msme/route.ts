@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureTdsMsmeTables() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_msme_compliance", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_msme_compliance (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -20,9 +21,9 @@ async function ensureTdsMsmeTables() {
       status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_mca_edit_logs", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_mca_edit_logs (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -33,10 +34,13 @@ async function ensureTdsMsmeTables() {
       ip_address VARCHAR(50) NOT NULL DEFAULT '127.0.0.1',
       field_changes_json TEXT NOT NULL
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureTdsMsmeTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -143,9 +147,9 @@ export async function GET() {
       },
       error: {
         code: "TDS_MSME_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to fetch TDS and MSME compliance data",
+        message: safeErrorMessage(err, "Failed to fetch TDS and MSME compliance data"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }

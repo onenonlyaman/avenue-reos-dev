@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_INTEGRATION_SYNC_LIMIT } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:integration_connectors", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS integration_connectors (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -17,7 +21,7 @@ export async function GET() {
         unreconciled_webhooks INT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM integration_connectors WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY connector_name ASC
@@ -51,19 +55,22 @@ export async function GET() {
       data: [],
       error: {
         code: "CONNECTORS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Integration connectors could not be loaded",
+        message: safeErrorMessage(err, "Integration connectors could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const tenantId = ACTIVE_TENANT_ID;
 
-    await prisma.$executeRaw`
+    await runtimeDdl("table:integration_connectors", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS integration_connectors (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -75,7 +82,7 @@ export async function POST(request: NextRequest) {
         unreconciled_webhooks INT NOT NULL DEFAULT 0,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     if (body.action === "MANUAL_SYNC") {
       const { connectorName, amount } = body;
@@ -83,7 +90,7 @@ export async function POST(request: NextRequest) {
       const requiresHitl = syncAmt > HITL_INTEGRATION_SYNC_LIMIT;
 
       if (requiresHitl) {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:integration_approvals", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS integration_approvals (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -95,7 +102,7 @@ export async function POST(request: NextRequest) {
             requires_hitl BOOLEAN NOT NULL DEFAULT true,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
 
         await prisma.$executeRaw`
           INSERT INTO integration_approvals (
@@ -179,10 +186,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "CONNECTOR_UPDATE_ERROR",
-        message: err instanceof Error ? err.message : "Connector configuration could not be saved",
+        message: safeErrorMessage(err, "Connector configuration could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

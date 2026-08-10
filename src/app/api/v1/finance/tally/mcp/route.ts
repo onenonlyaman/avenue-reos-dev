@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { jsonrpc, method, params, id } = body;
@@ -157,7 +161,7 @@ export async function POST(request: NextRequest) {
   } catch (err: unknown) {
     return NextResponse.json({
       jsonrpc: "2.0",
-      error: { code: -32603, message: err instanceof Error ? err.message : "Internal JSON-RPC Error" },
+      error: { code: -32603, message: safeErrorMessage(err, "Internal JSON-RPC Error") },
       id: null,
     });
   }

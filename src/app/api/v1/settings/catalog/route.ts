@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export const CATALOG_CATEGORIES = [
   "DEPARTMENT",
@@ -16,7 +17,7 @@ export const CATALOG_CATEGORIES = [
 ] as const;
 
 async function ensureCatalogRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:master_catalog_options", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS master_catalog_options (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -28,10 +29,13 @@ async function ensureCatalogRegister() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT uq_catalog_option UNIQUE (tenant_id, category, option_value)
     )
-  `;
+  `);
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureCatalogRegister();
 
@@ -74,14 +78,17 @@ export async function GET(request: NextRequest) {
       data: [],
       error: {
         code: "CATALOG_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Reference list could not be loaded",
+        message: safeErrorMessage(err, "Reference list could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { category, optionValue, sortOrder } = body;
@@ -98,7 +105,7 @@ export async function POST(request: NextRequest) {
           message: "A list name and entry value are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     if (!CATALOG_CATEGORIES.includes(category)) {
@@ -113,7 +120,7 @@ export async function POST(request: NextRequest) {
           message: "That reference list is not recognised",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureCatalogRegister();
@@ -141,7 +148,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -151,14 +158,17 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "CATALOG_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Reference entry could not be saved",
+        message: safeErrorMessage(err, "Reference entry could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 
 export async function DELETE(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const id = request.nextUrl.searchParams.get("id");
 
@@ -171,7 +181,7 @@ export async function DELETE(request: NextRequest) {
         data: null,
         error: { code: "MISSING_CATALOG_ID", message: "An entry must be selected for removal" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureCatalogRegister();
@@ -200,9 +210,9 @@ export async function DELETE(request: NextRequest) {
       data: null,
       error: {
         code: "CATALOG_DELETE_ERROR",
-        message: err instanceof Error ? err.message : "Reference entry could not be retired",
+        message: safeErrorMessage(err, "Reference entry could not be retired"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

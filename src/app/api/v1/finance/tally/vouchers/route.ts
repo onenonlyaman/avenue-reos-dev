@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureTallyTables() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_chart_of_accounts", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_chart_of_accounts (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -18,9 +19,9 @@ async function ensureTallyTables() {
       pan VARCHAR(20),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_vouchers", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_vouchers (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -35,9 +36,9 @@ async function ensureTallyTables() {
       requires_hitl BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_voucher_entries", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_voucher_entries (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -51,9 +52,9 @@ async function ensureTallyTables() {
       bill_number VARCHAR(100),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_mca_edit_logs", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_mca_edit_logs (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -64,10 +65,13 @@ async function ensureTallyTables() {
       ip_address VARCHAR(50) NOT NULL DEFAULT '127.0.0.1',
       field_changes_json TEXT NOT NULL
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureTallyTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -136,14 +140,17 @@ export async function GET() {
       data: [],
       error: {
         code: "TALLY_VOUCHERS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to fetch double-entry vouchers",
+        message: safeErrorMessage(err, "Failed to fetch double-entry vouchers"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureTallyTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -173,7 +180,7 @@ export async function POST(request: NextRequest) {
           message: "Voucher type, debit ledger, credit ledger, and valid amount are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const requiresHitl = numAmount > 1000000;
@@ -252,7 +259,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -262,14 +269,17 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "TALLY_VOUCHER_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Failed to record double-entry voucher",
+        message: safeErrorMessage(err, "Failed to record double-entry voucher"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 
 export async function PATCH(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureTallyTables();
     const tenantId = ACTIVE_TENANT_ID;
@@ -285,7 +295,7 @@ export async function PATCH(request: NextRequest) {
         data: null,
         error: { code: "INVALID_ACTION", message: "Voucher ID and Action required" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const newStatus = action === "AUTHORIZE" ? "POSTED" : "CANCELLED";
@@ -323,9 +333,9 @@ export async function PATCH(request: NextRequest) {
       data: null,
       error: {
         code: "TALLY_VOUCHER_PATCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to update voucher status",
+        message: safeErrorMessage(err, "Failed to update voucher status"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

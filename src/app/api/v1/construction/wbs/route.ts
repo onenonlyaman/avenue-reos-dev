@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { LAKH_IN_RUPEES } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 const isUuid = (val: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
@@ -94,14 +98,17 @@ export async function GET(request: NextRequest) {
       data: [],
       error: {
         code: "WBS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "WBS milestones could not be loaded",
+        message: safeErrorMessage(err, "WBS milestones could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const {
@@ -128,7 +135,7 @@ export async function POST(request: NextRequest) {
           message: "Development, milestone reference, phase, title, schedule dates and contractor are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const inserted = await prisma.$queryRaw<any[]>`
@@ -161,7 +168,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -171,10 +178,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "MILESTONE_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Work breakdown milestone could not be saved",
+        message: safeErrorMessage(err, "Work breakdown milestone could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

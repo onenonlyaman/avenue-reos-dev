@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const customers = await prisma.masterCustomer.findMany({
       where: { tenantId: ACTIVE_TENANT_ID },
@@ -38,14 +42,17 @@ export async function GET() {
       data: [],
       error: {
         code: "CUSTOMERS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Customer register could not be loaded",
+        message: safeErrorMessage(err, "Customer register could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { customerCode, fullName, email, phoneNumber, taxIdentifier, customerType } = body;
@@ -62,7 +69,7 @@ export async function POST(request: NextRequest) {
           message: "Customer name and contact number are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const created = await prisma.masterCustomer.create({
@@ -95,7 +102,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -105,9 +112,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "CUSTOMER_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Customer record could not be saved",
+        message: safeErrorMessage(err, "Customer record could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

@@ -21,19 +21,20 @@ export interface ApiResponseEnvelope<T> {
 export interface SystemStatus {
   databaseStatus: "CONNECTED" | "DEGRADED" | "DISCONNECTED";
   databaseLatencyMs: number;
-  eventStreamStatus: "OPERATIONAL" | "DEGRADED";
-  eventStreamLatencyMs: number;
-  totalActiveRoutes: number;
-  securityGateIntegrity: "ACTIVE" | "WARNING";
+  eventStreamStatus: "OPERATIONAL" | "DEGRADED" | "UNKNOWN";
+  eventStreamFailuresLastHour: number | null;
+  activeSessionCount: number | null;
   lastVerifiedUtc: string;
 }
 
 export interface DbHealthReport {
   tenantIsolationEnforced: boolean;
+  registersWithoutTenantScope: string[];
   totalTableCount: number;
   connectionPoolActive: number;
   connectionPoolMax: number;
-  migrationStatus: "UP_TO_DATE" | "PENDING";
+  appliedMigrations: string[];
+  appliedMigrationCount: number;
   avgQueryResponseTimeMs: number;
 }
 

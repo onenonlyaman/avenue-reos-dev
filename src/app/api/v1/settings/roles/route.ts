@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).systemRolePermission;
     let records: any[] = [];
@@ -11,7 +15,7 @@ export async function GET() {
       records = await model.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:system_role_permissions", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS system_role_permissions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -24,7 +28,7 @@ export async function GET() {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const raw = await prisma.$queryRaw<any[]>`
           SELECT * FROM system_role_permissions WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid
         `;
@@ -61,14 +65,17 @@ export async function GET() {
       data: [],
       error: {
         code: "ROLES_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Role permission register is temporarily unavailable",
+        message: safeErrorMessage(err, "Role permission register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { roleName, canRead, canCreate, canUpdate, canDelete, canAuthorizeHitl } = body;
@@ -83,7 +90,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_ROLE_NAME", message: "Role name is required" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const model = (prisma as any).systemRolePermission;
@@ -95,7 +102,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:system_role_permissions", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS system_role_permissions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         await prisma.$executeRaw`
           INSERT INTO system_role_permissions (
             tenant_id, role_name, can_read, can_create, can_update, can_delete, can_authorize_hitl
@@ -124,7 +131,7 @@ export async function POST(request: NextRequest) {
             updated_at = NOW()
         `;
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Role permission could not be saved");
+        throw new Error(safeErrorMessage(err, "Role permission could not be saved"));
       }
     }
 
@@ -146,10 +153,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "ROLE_UPDATE_ERROR",
-        message: err instanceof Error ? err.message : "Role permission could not be saved",
+        message: safeErrorMessage(err, "Role permission could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

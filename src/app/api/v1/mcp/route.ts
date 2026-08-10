@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { jsonrpc, method, params, id } = body;
@@ -28,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (method === "tools/list") {
-      await prisma.$executeRaw`
+      await runtimeDdl("table:mcp_registered_tools", () => prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS mcp_registered_tools (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id UUID NOT NULL,
@@ -41,7 +45,7 @@ export async function POST(request: NextRequest) {
           schema_input TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `;
+      `);
 
       const raw = await prisma.$queryRaw<any[]>`
         SELECT * FROM mcp_registered_tools WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY tool_name ASC
@@ -64,7 +68,7 @@ export async function POST(request: NextRequest) {
       const { name, arguments: args } = params || {};
       const tenantId = ACTIVE_TENANT_ID;
 
-      await prisma.$executeRaw`
+      await runtimeDdl("table:mcp_registered_tools", () => prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS mcp_registered_tools (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id UUID NOT NULL,
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
           schema_input TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `;
+      `);
 
       const toolRecord = await prisma.$queryRaw<any[]>`
         SELECT * FROM mcp_registered_tools WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND tool_name = ${name} LIMIT 1
@@ -86,7 +90,7 @@ export async function POST(request: NextRequest) {
       const isMutativeTool = Boolean(args?.requires_hitl || name?.includes("issue_purchase_order") || name?.includes("disburse") || name?.includes("execute") || (toolRecord && toolRecord.length > 0 && toolRecord[0]?.requires_hitl));
 
       if (isMutativeTool) {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:mcp_approvals", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS mcp_approvals (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -99,7 +103,7 @@ export async function POST(request: NextRequest) {
             requires_hitl BOOLEAN NOT NULL DEFAULT true,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
 
         await prisma.$executeRaw`
           INSERT INTO mcp_approvals (
@@ -143,7 +147,7 @@ export async function POST(request: NextRequest) {
   } catch (err: unknown) {
     return NextResponse.json({
       jsonrpc: "2.0",
-      error: { code: -32603, message: err instanceof Error ? err.message : "Internal JSON-RPC error" },
+      error: { code: -32603, message: safeErrorMessage(err, "Internal JSON-RPC error") },
       id: null,
     });
   }

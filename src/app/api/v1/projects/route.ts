@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const projects = await prisma.masterProject.findMany({
       where: { tenantId: ACTIVE_TENANT_ID },
@@ -50,14 +54,17 @@ export async function GET() {
       data: [],
       error: {
         code: "DB_FETCH_PROJECTS_ERROR",
-        message: err instanceof Error ? err.message : "Project register is temporarily unavailable",
+        message: safeErrorMessage(err, "Project register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const { projectCode, projectName, location, totalAreaSqft, totalBudget, startDate, expectedCompletionDate } = body;
   const tenantId = ACTIVE_TENANT_ID;
@@ -73,7 +80,7 @@ export async function POST(request: NextRequest) {
         code: "INCOMPLETE_PROJECT_RECORD",
         message: "Project name, location, saleable area, sanctioned budget and target completion date are required",
       },
-    });
+    }, { status: 400 });
   }
 
   try {
@@ -107,7 +114,7 @@ export async function POST(request: NextRequest) {
         towers: [],
       },
       error: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -117,8 +124,8 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "DB_CREATE_PROJECT_ERROR",
-        message: err instanceof Error ? err.message : "Project could not be saved",
+        message: safeErrorMessage(err, "Project could not be saved"),
       },
-    });
+    }, { status: 500 });
   }
 }

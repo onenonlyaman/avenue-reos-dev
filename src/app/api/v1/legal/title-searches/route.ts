@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureTitleSearchRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:title_search_logs", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS title_search_logs (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -16,10 +17,13 @@ async function ensureTitleSearchRegister() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).titleSearchLog;
     let records: any[] = [];
@@ -69,14 +73,17 @@ export async function GET() {
       data: [],
       error: {
         code: "TITLE_SEARCHES_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Title search register is temporarily unavailable",
+        message: safeErrorMessage(err, "Title search register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { surveyNumber, legalAdvocate, searchPeriodYears, encumbranceStatus, extractVerified712, riskRating } = body;
@@ -93,7 +100,7 @@ export async function POST(request: NextRequest) {
           message: "Survey number and appointed advocate are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureTitleSearchRegister();
@@ -127,7 +134,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -137,9 +144,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "TITLE_SEARCH_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Title search record could not be registered",
+        message: safeErrorMessage(err, "Title search record could not be registered"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

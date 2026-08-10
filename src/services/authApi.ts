@@ -69,10 +69,16 @@ export const authApi = {
     });
   },
 
-  async register(fullName: string, email: string, department: string, designation: string): Promise<AuthResponse> {
-    return fetchEnvelope<AuthResponse>(`${API_BASE}/register`, {
+  async register(payload: {
+    fullName: string;
+    email: string;
+    password: string;
+    department: string;
+    designation: string;
+  }): Promise<{ submitted: boolean; message: string }> {
+    return fetchEnvelope<{ submitted: boolean; message: string }>(`${API_BASE}/register`, {
       method: "POST",
-      body: JSON.stringify({ fullName, email, department, designation }),
+      body: JSON.stringify(payload),
     });
   },
 
@@ -86,10 +92,17 @@ export const authApi = {
     });
   },
 
-  async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
-    return fetchEnvelope<{ success: boolean; message: string }>(`${API_BASE}/forgot-password`, {
+  async requestPasswordReset(email: string): Promise<{ submitted: boolean; message: string }> {
+    return fetchEnvelope<{ submitted: boolean; message: string }>(`${API_BASE}/forgot-password`, {
       method: "POST",
       body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword(token: string, password: string): Promise<{ updated: boolean; message: string }> {
+    return fetchEnvelope<{ updated: boolean; message: string }>(`${API_BASE}/reset-password`, {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
     });
   },
 };

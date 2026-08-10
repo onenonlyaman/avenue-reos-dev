@@ -7,6 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "migrate": "node scripts/migrate.mjs",
+    "migrate:status": "node scripts/migrate.mjs --status",
+    "admin": "node scripts/manage-admin.mjs",
     "test:e2e": "playwright test",
     "audit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/system-audit.ts",
     "audit:gates": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/system-audit.ts --gates"

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { LAKH_IN_RUPEES } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureReraComplianceRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:rera_compliances", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS rera_compliances (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -19,10 +20,13 @@ async function ensureReraComplianceRegister() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).reraCompliance;
     let records: any[] = [];
@@ -76,14 +80,17 @@ export async function GET() {
       data: [],
       error: {
         code: "RERA_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "MahaRERA compliance register is temporarily unavailable",
+        message: safeErrorMessage(err, "MahaRERA compliance register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const {
@@ -109,7 +116,7 @@ export async function POST(request: NextRequest) {
           message: "Development name and MahaRERA registration reference are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureReraComplianceRegister();
@@ -147,7 +154,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -157,9 +164,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "RERA_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "MahaRERA compliance record could not be registered",
+        message: safeErrorMessage(err, "MahaRERA compliance record could not be registered"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

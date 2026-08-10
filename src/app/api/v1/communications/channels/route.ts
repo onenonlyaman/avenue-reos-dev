@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:chat_channels", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS chat_channels (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -16,7 +20,7 @@ export async function GET() {
         last_activity TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM chat_channels WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY last_activity DESC
@@ -50,14 +54,17 @@ export async function GET() {
       data: [],
       error: {
         code: "CHANNELS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Chat channels could not be loaded",
+        message: safeErrorMessage(err, "Chat channels could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { channelName, department, description, isPrivate } = body;
@@ -72,10 +79,10 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Channel name and department are required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
-    await prisma.$executeRaw`
+    await runtimeDdl("table:chat_channels", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS chat_channels (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -87,7 +94,7 @@ export async function POST(request: NextRequest) {
         last_activity TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO chat_channels (
@@ -116,7 +123,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -126,10 +133,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "CHANNEL_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Channel could not be saved",
+        message: safeErrorMessage(err, "Channel could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

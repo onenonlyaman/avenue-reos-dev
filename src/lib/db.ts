@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { ALLOW_RUNTIME_DDL, IS_PRODUCTION } from "@/lib/config";
 
 const configuredUrl = process.env.DATABASE_URL;
 
@@ -13,48 +14,81 @@ const poolTimeoutSeconds = Number(process.env.DATABASE_POOL_TIMEOUT_SECONDS) || 
 const connectTimeoutSeconds = Number(process.env.DATABASE_CONNECT_TIMEOUT_SECONDS) || 10;
 
 function withPoolParameters(rawUrl: string): string {
+  const cleanedUrl = rawUrl.replace(/"/g, "").trim();
+  let url: URL;
   try {
-    const cleanedUrl = rawUrl.replace(/"/g, "").split("NEXT_PUBLIC")[0].trim();
-    const url = new URL(cleanedUrl);
-    if (!url.searchParams.has("connection_limit")) {
-      url.searchParams.set("connection_limit", String(connectionLimit));
-    }
-    if (!url.searchParams.has("pool_timeout")) {
-      url.searchParams.set("pool_timeout", String(poolTimeoutSeconds));
-    }
-    if (!url.searchParams.has("connect_timeout")) {
-      url.searchParams.set("connect_timeout", String(connectTimeoutSeconds));
-    }
-    return url.toString();
+    url = new URL(cleanedUrl);
   } catch {
-    return rawUrl;
+    throw new Error("DATABASE_URL is not a valid connection URL.");
   }
+
+  if (!/^postgres(ql)?:$/.test(url.protocol)) {
+    throw new Error(`DATABASE_URL must be a PostgreSQL URL. Received protocol "${url.protocol}".`);
+  }
+
+  if (IS_PRODUCTION && (url.hostname === "localhost" || url.hostname === "127.0.0.1")) {
+    console.warn(
+      "[db] DATABASE_URL points at localhost while NODE_ENV=production. Confirm this is the intended production database."
+    );
+  }
+
+  if (!url.searchParams.has("connection_limit")) {
+    url.searchParams.set("connection_limit", String(connectionLimit));
+  }
+  if (!url.searchParams.has("pool_timeout")) {
+    url.searchParams.set("pool_timeout", String(poolTimeoutSeconds));
+  }
+  if (!url.searchParams.has("connect_timeout")) {
+    url.searchParams.set("connect_timeout", String(connectTimeoutSeconds));
+  }
+  return url.toString();
 }
 
 const dbUrl = withPoolParameters(configuredUrl);
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  avenueDdlApplied: Set<string> | undefined;
 };
 
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     datasourceUrl: dbUrl,
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+    log: IS_PRODUCTION ? ["error"] : ["error", "warn"],
   });
 
-if (process.env.NODE_ENV !== "production") {
+if (!IS_PRODUCTION) {
   globalForPrisma.prisma = prisma;
 }
 
 export const DATA_SERVICE_UNAVAILABLE_MESSAGE =
   "Records are temporarily unavailable while the platform restores its data connection.";
 
-export async function withDatabase<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
+const appliedDdl = (globalForPrisma.avenueDdlApplied ??= new Set<string>());
+
+/**
+ * Guard for the `CREATE TABLE IF NOT EXISTS` statements that route handlers historically
+ * issued on every request.
+ *
+ * Schema is owned by `migrations/`. In production this is a no-op, so no request path
+ * takes a DDL lock and the application database role does not need DDL rights. Outside
+ * production the statement still runs, but only once per statement per process, so local
+ * work against a database that has not been migrated keeps working.
+ */
+export async function runtimeDdl(key: string, statement: () => Promise<unknown>): Promise<void> {
+  if (!ALLOW_RUNTIME_DDL) return;
+  if (appliedDdl.has(key)) return;
+  appliedDdl.add(key);
   try {
-    return await operation();
-  } catch {
-    return fallback;
+    await statement();
+  } catch (err) {
+    appliedDdl.delete(key);
+    console.error(`[db] runtime DDL "${key}" failed`, err);
+    throw err;
   }
+}
+
+export async function assertDatabaseReachable(): Promise<void> {
+  await prisma.$queryRaw`SELECT 1`;
 }

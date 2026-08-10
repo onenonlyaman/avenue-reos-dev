@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const leadsCount = await prisma.crmLead.count({ where: { tenantId: ACTIVE_TENANT_ID } });
     const qualifiedCount = await prisma.crmLead.count({ where: { tenantId: ACTIVE_TENANT_ID, status: "QUALIFIED" } });
@@ -84,9 +88,9 @@ export async function GET() {
       },
       error: {
         code: "ANALYTICS_ERROR",
-        message: err instanceof Error ? err.message : "CRM analytics could not be completed",
+        message: safeErrorMessage(err, "CRM analytics could not be completed"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { id, reason } = body;
@@ -15,7 +19,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "INVALID_ID", message: "Parcel ID is required" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const model = (prisma as any).landParcel;
@@ -50,9 +54,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "REJECT_PARCEL_ERROR",
-        message: err instanceof Error ? err.message : "Land parcel acquisition could not be rejected",
+        message: safeErrorMessage(err, "Land parcel acquisition could not be rejected"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

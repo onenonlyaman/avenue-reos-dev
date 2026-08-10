@@ -1,8 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const budgets = await prisma.budgetHead.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
     const bookings = await prisma.salesBooking.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
@@ -72,9 +76,9 @@ export async function GET() {
       },
       error: {
         code: "FINANCE_OVERVIEW_ERROR",
-        message: err instanceof Error ? err.message : "Financial overview could not be loaded",
+        message: safeErrorMessage(err, "Financial overview could not be loaded"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

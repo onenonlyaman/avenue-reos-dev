@@ -1,49 +1,81 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { envelope, requireApiAccess } from "@/lib/apiAccess";
+import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+/**
+ * Every figure below is measured. Nothing on this endpoint reports a fixed "healthy"
+ * value: if a subsystem cannot be measured, it is reported as UNKNOWN rather than green.
+ */
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
+  const dbStarted = Date.now();
+  let databaseStatus: "CONNECTED" | "DEGRADED" | "DISCONNECTED" = "DISCONNECTED";
+  let databaseLatencyMs = 0;
+
   try {
-    const startTime = Date.now();
     await prisma.$queryRaw`SELECT 1`;
-    const dbLatency = Date.now() - startTime;
-
-    return NextResponse.json({
-      success: true,
-      status_code: 200,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: {
-        databaseStatus: "CONNECTED",
-        databaseLatencyMs: dbLatency,
-        eventStreamStatus: "OPERATIONAL",
-        eventStreamLatencyMs: 4,
-        totalActiveRoutes: 73,
-        securityGateIntegrity: "ACTIVE",
-        lastVerifiedUtc: new Date().toISOString(),
-      },
-      error: null,
-      meta: null,
-    });
-  } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
+    databaseLatencyMs = Date.now() - dbStarted;
+    databaseStatus = databaseLatencyMs > 1000 ? "DEGRADED" : "CONNECTED";
+  } catch (err) {
+    console.error("[system/status] database probe failed", err);
+    return envelope(503, {
       data: {
         databaseStatus: "DISCONNECTED",
-        databaseLatencyMs: 0,
-        eventStreamStatus: "DEGRADED",
-        eventStreamLatencyMs: 0,
-        totalActiveRoutes: 73,
-        securityGateIntegrity: "WARNING",
+        databaseLatencyMs: Date.now() - dbStarted,
+        eventStreamStatus: "UNKNOWN",
+        eventStreamFailuresLastHour: null,
+        activeSessionCount: null,
         lastVerifiedUtc: new Date().toISOString(),
       },
       error: {
-        code: "SYSTEM_STATUS_ERROR",
-        message: err instanceof Error ? err.message : "System health check failed",
+        code: "DATA_SERVICE_UNREACHABLE",
+        message: "The data service did not respond to the health probe.",
       },
-      meta: null,
     });
   }
+
+  let eventStreamStatus: "OPERATIONAL" | "DEGRADED" | "UNKNOWN" = "UNKNOWN";
+  let eventStreamFailuresLastHour: number | null = null;
+
+  try {
+    const rows = await prisma.$queryRaw<{ failures: bigint }[]>`
+      SELECT COUNT(*) AS failures
+      FROM event_stream_logs
+      WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid
+        AND status = 'FAILED'
+        AND created_at > NOW() - INTERVAL '1 hour'
+    `;
+    eventStreamFailuresLastHour = Number(rows[0]?.failures ?? 0);
+    eventStreamStatus = eventStreamFailuresLastHour > 0 ? "DEGRADED" : "OPERATIONAL";
+  } catch {
+    // Register absent or unreadable: report UNKNOWN rather than asserting health.
+  }
+
+  let activeSessionCount: number | null = null;
+  try {
+    const rows = await prisma.$queryRaw<{ active: bigint }[]>`
+      SELECT COUNT(*) AS active
+      FROM system_sessions
+      WHERE revoked_at IS NULL AND expires_at > NOW()
+    `;
+    activeSessionCount = Number(rows[0]?.active ?? 0);
+  } catch {
+    // Leave null.
+  }
+
+  return envelope(200, {
+    data: {
+      databaseStatus,
+      databaseLatencyMs,
+      eventStreamStatus,
+      eventStreamFailuresLastHour,
+      activeSessionCount,
+      lastVerifiedUtc: new Date().toISOString(),
+    },
+  });
 }

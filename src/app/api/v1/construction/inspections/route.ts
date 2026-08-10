@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 const isUuid = (val: string) => /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(val);
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
@@ -84,14 +88,17 @@ export async function GET(request: NextRequest) {
       data: [],
       error: {
         code: "INSPECTIONS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Quality and safety inspections could not be loaded",
+        message: safeErrorMessage(err, "Quality and safety inspections could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { ncrNumber, defectSeverity, description, correctiveAction, inspectorName, contractorName } = body;
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
           message: "Defect severity and observation details are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const site = await prisma.$queryRaw<any[]>`
@@ -127,7 +134,7 @@ export async function POST(request: NextRequest) {
           message: "Register a construction site before logging inspections",
         },
         meta: null,
-      });
+      }, { status: 422 });
     }
 
     const inspector = inspectorName
@@ -148,7 +155,7 @@ export async function POST(request: NextRequest) {
           message: "Register an inspecting engineer in the workforce directory first",
         },
         meta: null,
-      });
+      }, { status: 422 });
     }
 
     const contractor = contractorName
@@ -187,7 +194,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -197,10 +204,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "INSPECTION_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Inspection record could not be saved",
+        message: safeErrorMessage(err, "Inspection record could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { id } = body;
@@ -15,7 +19,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_ID", message: "Approval ID is required" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await prisma.$executeRaw`
@@ -48,9 +52,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "HR_REJECT_ERROR",
-        message: err instanceof Error ? err.message : "HR request could not be rejected",
+        message: safeErrorMessage(err, "HR request could not be rejected"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

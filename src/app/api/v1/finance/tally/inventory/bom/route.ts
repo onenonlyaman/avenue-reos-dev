@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureBomTable() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:tally_bill_of_materials", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS tally_bill_of_materials (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -15,10 +16,13 @@ async function ensureBomTable() {
       scrap_rate_pct DECIMAL(5,2) NOT NULL DEFAULT 1.0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureBomTable();
     const tenantId = ACTIVE_TENANT_ID;
@@ -58,14 +62,17 @@ export async function GET() {
       data: [],
       error: {
         code: "BOM_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Failed to fetch BOM recipes",
+        message: safeErrorMessage(err, "Failed to fetch BOM recipes"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await ensureBomTable();
     const tenantId = ACTIVE_TENANT_ID;
@@ -83,7 +90,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "INVALID_PRODUCTION_RECORD", message: "BOM recipe ID required" },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const recipes = await prisma.$queryRaw<any[]>`
@@ -121,7 +128,7 @@ export async function POST(request: NextRequest) {
       data: { productionVoucherRef: ref },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -131,9 +138,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "PRODUCTION_VOUCHER_ERROR",
-        message: err instanceof Error ? err.message : "Failed to post production voucher",
+        message: safeErrorMessage(err, "Failed to post production voucher"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

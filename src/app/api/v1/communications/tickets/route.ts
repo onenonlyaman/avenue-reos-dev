@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    await prisma.$executeRaw`
+    await runtimeDdl("table:support_tickets", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS support_tickets (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -20,7 +24,7 @@ export async function GET() {
         requires_hitl BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM support_tickets WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
@@ -59,14 +63,17 @@ export async function GET() {
       data: [],
       error: {
         code: "TICKETS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Support tickets could not be loaded",
+        message: safeErrorMessage(err, "Support tickets could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { customerName, subject, category, assignedDepartment, priority, claimAmount } = body;
@@ -81,7 +88,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Customer name and subject are required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const ticketRef = `T-2026-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -90,7 +97,7 @@ export async function POST(request: NextRequest) {
     const requiresHitl = amt > 100000 || isLegalThreat;
     const status = requiresHitl ? "PENDING_APPROVAL" : "OPEN";
 
-    await prisma.$executeRaw`
+    await runtimeDdl("table:support_tickets", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS support_tickets (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
@@ -106,7 +113,7 @@ export async function POST(request: NextRequest) {
         requires_hitl BOOLEAN NOT NULL DEFAULT false,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `;
+    `);
 
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO support_tickets (
@@ -123,7 +130,7 @@ export async function POST(request: NextRequest) {
     const created = inserted[0];
 
     if (requiresHitl) {
-      await prisma.$executeRaw`
+      await runtimeDdl("table:communications_approvals", () => prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS communications_approvals (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id UUID NOT NULL,
@@ -136,7 +143,7 @@ export async function POST(request: NextRequest) {
           requires_hitl BOOLEAN NOT NULL DEFAULT true,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `;
+      `);
 
       await prisma.$executeRaw`
         INSERT INTO communications_approvals (
@@ -170,7 +177,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -180,10 +187,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "TICKET_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Support ticket could not be saved",
+        message: safeErrorMessage(err, "Support ticket could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

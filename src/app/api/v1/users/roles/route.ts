@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_ELEVATED_AUTHORITY_LIMIT } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { userName, targetRole, financialLimit } = body;
@@ -14,7 +18,7 @@ export async function POST(request: NextRequest) {
     const requiresHitl = isElevatedRole || isElevatedLimit;
 
     if (requiresHitl) {
-      await prisma.$executeRaw`
+      await runtimeDdl("table:user_role_approvals", () => prisma.$executeRaw`
         CREATE TABLE IF NOT EXISTS user_role_approvals (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id UUID NOT NULL,
@@ -26,7 +30,7 @@ export async function POST(request: NextRequest) {
           requires_hitl BOOLEAN NOT NULL DEFAULT true,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `;
+      `);
 
       await prisma.$executeRaw`
         INSERT INTO user_role_approvals (
@@ -73,10 +77,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "USER_ROLE_UPDATE_ERROR",
-        message: err instanceof Error ? err.message : "User role could not be saved",
+        message: safeErrorMessage(err, "User role could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

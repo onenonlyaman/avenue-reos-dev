@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureMaintenanceTicketRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:maintenance_tickets", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS maintenance_tickets (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -18,10 +19,13 @@ async function ensureMaintenanceTicketRegister() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).maintenanceTicket;
     let records: any[] = [];
@@ -77,14 +81,17 @@ export async function GET() {
       data: [],
       error: {
         code: "TICKETS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Maintenance ticket register is temporarily unavailable",
+        message: safeErrorMessage(err, "Maintenance ticket register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { ticketSummary, propertyLocation, category, priority, assignedContractor } = body;
@@ -101,7 +108,7 @@ export async function POST(request: NextRequest) {
           message: "Ticket summary, property location and category are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureMaintenanceTicketRegister();
@@ -138,7 +145,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -148,9 +155,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "TICKET_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Maintenance ticket could not be logged",
+        message: safeErrorMessage(err, "Maintenance ticket could not be logged"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

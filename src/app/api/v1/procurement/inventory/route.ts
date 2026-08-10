@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { LAKH_IN_RUPEES } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureWarehouseInventoryRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:warehouse_inventory", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS warehouse_inventory (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -18,10 +19,13 @@ async function ensureWarehouseInventoryRegister() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const invModel = (prisma as any).warehouseInventory;
     let items: any[] = [];
@@ -85,14 +89,17 @@ export async function GET() {
       data: [],
       error: {
         code: "INVENTORY_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Warehouse stock register is temporarily unavailable",
+        message: safeErrorMessage(err, "Warehouse stock register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { category, itemDescription, storageLocation, availableQuantity, unitOfMeasure, reorderLevel, unitCost } =
@@ -110,7 +117,7 @@ export async function POST(request: NextRequest) {
           message: "Material category, description and storage location are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureWarehouseInventoryRegister();
@@ -146,7 +153,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -156,9 +163,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "INVENTORY_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Stock item could not be registered",
+        message: safeErrorMessage(err, "Stock item could not be registered"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

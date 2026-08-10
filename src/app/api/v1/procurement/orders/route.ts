@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_PROCUREMENT_LIMIT } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const poModel = (prisma as any).purchaseOrder;
     let orders: any[] = [];
@@ -57,14 +61,17 @@ export async function GET() {
       data: [],
       error: {
         code: "PO_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Purchase orders could not be loaded",
+        message: safeErrorMessage(err, "Purchase orders could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { siteName, vendorName, materialDescription, quantity, unitRate, freightAmount, deliveryDueDate } = body;
@@ -79,7 +86,7 @@ export async function POST(request: NextRequest) {
         data: null,
         error: { code: "MISSING_FIELDS", message: "Site name, vendor name, and material description are required." },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const qty = Number(quantity || 0);
@@ -116,7 +123,7 @@ export async function POST(request: NextRequest) {
       });
     } else {
       try {
-        await prisma.$executeRaw`
+        await runtimeDdl("table:purchase_orders", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS purchase_orders (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
@@ -135,7 +142,7 @@ export async function POST(request: NextRequest) {
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
-        `;
+        `);
         const inserted = await prisma.$queryRaw<any[]>`
           INSERT INTO purchase_orders (
             tenant_id, order_reference, site_name, vendor_name, material_description,
@@ -150,7 +157,7 @@ export async function POST(request: NextRequest) {
         `;
         created = inserted[0];
       } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "Purchase order could not be saved");
+        throw new Error(safeErrorMessage(err, "Purchase order could not be saved"));
       }
     }
 
@@ -176,7 +183,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -186,10 +193,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "PO_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Purchase order could not be saved",
+        message: safeErrorMessage(err, "Purchase order could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

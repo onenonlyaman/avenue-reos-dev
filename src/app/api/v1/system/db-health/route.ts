@@ -1,10 +1,21 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { CONFIGURED_POOL_SIZE, prisma } from "@/lib/db";
+import { envelope, requireAdmin } from "@/lib/apiAccess";
 
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+/**
+ * Administrator-only. Reports schema and pool facts as measured, including the names of
+ * any register that is missing tenant scoping — the previous implementation asserted
+ * `migrationStatus: "UP_TO_DATE"` unconditionally, which could never surface drift.
+ */
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const startTime = Date.now();
-    const tables = await prisma.$queryRaw<any[]>`
+    const tables = await prisma.$queryRaw<{ table_name: string }[]>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
     `;
     const queryTime = Date.now() - startTime;
@@ -18,39 +29,33 @@ export async function GET() {
         )
     `;
 
-    const activeConnections = await prisma.$queryRaw<{ count: bigint }[]>`
+    const activeConnections = await prisma.$queryRaw<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM pg_stat_activity WHERE datname = current_database()
     `;
 
-    return NextResponse.json({
-      success: true,
-      status_code: 200,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
+    const appliedMigrations = await prisma.$queryRaw<{ name: string; applied_at: Date }[]>`
+      SELECT name, applied_at FROM schema_migrations ORDER BY name
+    `.catch(() => [] as { name: string; applied_at: Date }[]);
+
+    return envelope(200, {
       data: {
-        tenantIsolationEnforced: (untenanted || []).length === 0,
-        registersWithoutTenantScope: (untenanted || []).map((t) => t.table_name),
-        totalTableCount: tables ? tables.length : 0,
-        connectionPoolActive: Number(activeConnections?.[0]?.count ?? 0),
+        tenantIsolationEnforced: untenanted.length === 0,
+        registersWithoutTenantScope: untenanted.map((t) => t.table_name),
+        totalTableCount: tables.length,
+        connectionPoolActive: Number(activeConnections[0]?.count ?? 0),
         connectionPoolMax: CONFIGURED_POOL_SIZE,
-        migrationStatus: "UP_TO_DATE",
+        appliedMigrations: appliedMigrations.map((m) => m.name),
+        appliedMigrationCount: appliedMigrations.length,
         avgQueryResponseTimeMs: queryTime,
       },
-      error: null,
-      meta: null,
     });
-  } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: null,
+  } catch (err) {
+    console.error("[system/db-health] probe failed", err);
+    return envelope(503, {
       error: {
-        code: "DB_HEALTH_ERROR",
-        message: err instanceof Error ? err.message : "Data service health check could not be completed",
+        code: "DB_HEALTH_UNAVAILABLE",
+        message: "The data service health check could not be completed.",
       },
-      meta: null,
     });
   }
 }

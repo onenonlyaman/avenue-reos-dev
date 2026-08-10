@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { ACTIVE_FISCAL_YEAR, LAKH_IN_RUPEES } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const dbBudgets = await prisma.budgetHead.findMany({ where: { tenantId: ACTIVE_TENANT_ID },
       include: {
@@ -52,14 +56,17 @@ export async function GET() {
       data: [],
       error: {
         code: "DB_FETCH_BUDGETS_ERROR",
-        message: err instanceof Error ? err.message : "Budgets could not be loaded",
+        message: safeErrorMessage(err, "Budgets could not be loaded"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const { budgetCode, costCenterId, totalBudgetLakhs, fiscalYear } = body;
 
@@ -75,7 +82,7 @@ export async function POST(request: NextRequest) {
         message: "Budget reference, cost centre and allocated amount are required",
       },
       meta: null,
-    });
+    }, { status: 400 });
   }
 
   const numLakhs = Number(totalBudgetLakhs);
@@ -98,7 +105,7 @@ export async function POST(request: NextRequest) {
           message: "The selected cost centre is not on record",
         },
         meta: null,
-      });
+      }, { status: 404 });
     }
 
     const created = await prisma.budgetHead.create({
@@ -134,7 +141,7 @@ export async function POST(request: NextRequest) {
       data: newBudget,
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -144,9 +151,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "DB_CREATE_BUDGET_ERROR",
-        message: err instanceof Error ? err.message : "Budget allocation could not be saved",
+        message: safeErrorMessage(err, "Budget allocation could not be saved"),
       },
-    });
+    }, { status: 500 });
   }
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export interface BlueprintSlotConfig {
   slot_number: number;
@@ -13,6 +14,9 @@ export interface BlueprintSlotConfig {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const searchParams = request.nextUrl.searchParams;
   const projectId = searchParams.get("projectId");
   const towerName = searchParams.get("towerName");
@@ -84,14 +88,17 @@ export async function GET(request: NextRequest) {
       data: [],
       error: {
         code: "DB_FETCH_UNITS_ERROR",
-        message: err instanceof Error ? err.message : "Unit inventory register is temporarily unavailable",
+        message: safeErrorMessage(err, "Unit inventory register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await request.json();
   const {
     projectId,
@@ -114,7 +121,7 @@ export async function POST(request: NextRequest) {
         code: "PROJECT_NOT_SELECTED",
         message: "A target development project must be selected before inventory can be registered",
       },
-    });
+    }, { status: 400 });
   }
 
   if (!towerName) {
@@ -128,7 +135,7 @@ export async function POST(request: NextRequest) {
         code: "TOWER_NOT_SPECIFIED",
         message: "A tower or wing name is required for inventory registration",
       },
-    });
+    }, { status: 400 });
   }
 
   try {
@@ -186,7 +193,7 @@ export async function POST(request: NextRequest) {
           estimatedRevenueCr: Number((totalEstRev / 10000000).toFixed(2)),
         },
         error: null,
-      });
+      }, { status: 201 });
     }
 
     const { unitNumber, floorNumber, unitType, price, carpetAreaSqFt, balconySqft, facingDirection, parkingBays, reraDetails } = body;
@@ -202,7 +209,7 @@ export async function POST(request: NextRequest) {
           code: "INCOMPLETE_UNIT_RECORD",
           message: "Unit number, floor, typology, carpet area and base price are required",
         },
-      });
+      }, { status: 400 });
     }
 
     const createdSingle = await prisma.masterUnit.create({
@@ -232,7 +239,7 @@ export async function POST(request: NextRequest) {
       request_id: `req-${Date.now()}`,
       data: createdSingle,
       error: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -242,9 +249,9 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "DB_CREATE_UNIT_ERROR",
-        message: err instanceof Error ? err.message : "Unit record could not be registered",
+        message: safeErrorMessage(err, "Unit record could not be registered"),
       },
-    });
+    }, { status: 500 });
   }
 }
 

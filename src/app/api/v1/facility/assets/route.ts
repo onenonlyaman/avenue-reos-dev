@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureFacilityAssetRegister() {
-  await prisma.$executeRaw`
+  await runtimeDdl("table:facility_assets", () => prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS facility_assets (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id UUID NOT NULL,
@@ -18,10 +19,13 @@ async function ensureFacilityAssetRegister() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const model = (prisma as any).facilityAsset;
     let records: any[] = [];
@@ -72,14 +76,17 @@ export async function GET() {
       data: [],
       error: {
         code: "ASSETS_FETCH_ERROR",
-        message: err instanceof Error ? err.message : "Facility asset register is temporarily unavailable",
+        message: safeErrorMessage(err, "Facility asset register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const {
@@ -105,7 +112,7 @@ export async function POST(request: NextRequest) {
           message: "Asset description, property location and category are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     await ensureFacilityAssetRegister();
@@ -140,7 +147,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -150,10 +157,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "ASSET_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Facility asset could not be registered",
+        message: safeErrorMessage(err, "Facility asset could not be registered"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 

@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { CRORE_IN_RUPEES, LAKH_IN_RUPEES } from "@/lib/governance";
 import { PLATFORM_DEPARTMENTS } from "@/lib/departments";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 const CLOSED_LEAD_STATUSES = ["LOST", "CLOSED", "DROPPED"];
 const BOOKED_UNIT_STATUSES = ["BOOKED", "RESERVED"];
@@ -67,7 +68,10 @@ async function loadAuthorizationQueues() {
   return queues.sort((a, b) => b.pendingCount - a.pendingCount);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const qualifiedLeads = await safeQuery(
       () =>
@@ -403,9 +407,9 @@ export async function GET() {
       data: null,
       error: {
         code: "DASHBOARD_SUMMARY_ERROR",
-        message: err instanceof Error ? err.message : "Operating console figures could not be loaded",
+        message: safeErrorMessage(err, "Operating console figures could not be loaded"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }

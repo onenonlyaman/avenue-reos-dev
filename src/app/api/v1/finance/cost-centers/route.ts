@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { LAKH_IN_RUPEES } from "@/lib/governance";
+import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const costCenters = await prisma.masterCostCenter.findMany({
       where: { tenantId: ACTIVE_TENANT_ID },
@@ -38,14 +42,17 @@ export async function GET() {
       data: [],
       error: {
         code: "FETCH_COST_CENTERS_ERROR",
-        message: err instanceof Error ? err.message : "Cost centre register is temporarily unavailable",
+        message: safeErrorMessage(err, "Cost centre register is temporarily unavailable"),
       },
       meta: { total_records: 0 },
-    });
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body = await request.json();
     const { costCenterCode, name, projectId, allocatedBudgetLakhs } = body;
@@ -62,7 +69,7 @@ export async function POST(request: NextRequest) {
           message: "Cost centre code, name and allocated budget are required",
         },
         meta: null,
-      });
+      }, { status: 400 });
     }
 
     const created = await prisma.masterCostCenter.create({
@@ -92,7 +99,7 @@ export async function POST(request: NextRequest) {
       },
       error: null,
       meta: null,
-    });
+    }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({
       success: false,
@@ -102,10 +109,10 @@ export async function POST(request: NextRequest) {
       data: null,
       error: {
         code: "COST_CENTRE_CREATE_ERROR",
-        message: err instanceof Error ? err.message : "Cost centre could not be saved",
+        message: safeErrorMessage(err, "Cost centre could not be saved"),
       },
       meta: null,
-    });
+    }, { status: 500 });
   }
 }
 
