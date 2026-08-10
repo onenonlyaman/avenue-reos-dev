@@ -22,6 +22,9 @@ const SPOOFABLE_IDENTITY_HEADERS = [
   "x-user-name",
   "x-tenant-id",
   "x-avenue-user",
+  // Set by this proxy below so the root layout can authorise the route being rendered.
+  // Stripped first so a client cannot present a path other than the one it requested.
+  "x-avenue-pathname",
 ];
 
 function withSecurityHeaders(response: NextResponse): NextResponse {
@@ -39,6 +42,7 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
 function sanitisedRequestHeaders(request: NextRequest): Headers {
   const headers = new Headers(request.headers);
   for (const name of SPOOFABLE_IDENTITY_HEADERS) headers.delete(name);
+  headers.set("x-avenue-pathname", request.nextUrl.pathname);
   return headers;
 }
 

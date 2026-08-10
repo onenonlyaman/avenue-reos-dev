@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/layout/AppShell";
 import { AuthProvider } from "@/context/AuthContext";
+import { RouteAuthorisation } from "@/components/layout/RouteAuthorisation";
 
 const geistHeading = Geist({ subsets: ["latin"], variable: "--font-heading" });
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
   description: "Enterprise operating platform for developers, builders, contractors, finance teams, and executive management.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -37,7 +38,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <AuthProvider>
           <TooltipProvider>
-            <AppShell>{children}</AppShell>
+            <AppShell>
+              <RouteAuthorisation>{children}</RouteAuthorisation>
+            </AppShell>
           </TooltipProvider>
         </AuthProvider>
       </body>
