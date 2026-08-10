@@ -1,5 +1,10 @@
 # Deployment runbook
 
+> **Status:** steps 1–6 were carried out against `srv1838887.hstgr.cloud`
+> (200.97.175.174). The site serves over HTTPS, both databases are bound to loopback,
+> and 18/18 live checks pass. Keep this document as the procedure for the next
+> deployment and for rebuilding the host.
+
 Read this before deploying the hardened build. **Deploying without step 1 will take the
 site down**, and **after step 2 the two existing accounts can no longer sign in** until an
 administrator password is set. Both are intentional.

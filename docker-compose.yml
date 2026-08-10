@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: avenue_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-avenue_admin}
+      # Supplied by .env, which is not committed. Never inline a credential here.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-avenue_reos}
+    ports:
+      # Loopback only. Publishing on 0.0.0.0 exposed the production database to the
+      # internet; the application reaches it over localhost.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avenue_admin} -d ${POSTGRES_DB:-avenue_reos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
