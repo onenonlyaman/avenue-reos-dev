@@ -2,25 +2,99 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 
+async function ensureSeedUsers() {
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS system_users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255) NOT NULL DEFAULT 'pbkdf2_sha256$default_hash',
+      department VARCHAR(100) NOT NULL,
+      designation VARCHAR(100) NOT NULL,
+      site_location VARCHAR(255) NOT NULL DEFAULT 'Nashik Corporate Office',
+      mfa_enabled BOOLEAN NOT NULL DEFAULT true,
+      status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+      role VARCHAR(100) NOT NULL DEFAULT 'Site Engineer',
+      last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  const existing = await prisma.$queryRaw<any[]>`
+    SELECT id FROM system_users WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1
+  `;
+
+  if (existing.length === 0) {
+    const tenantId = ACTIVE_TENANT_ID;
+
+    const seedAccounts = [
+      {
+        fullName: "Aman Bele",
+        email: "aman.bele@avenuebuilders.in",
+        department: "Executive Administration",
+        designation: "Chief Platform Architect",
+        role: "Governance Director",
+        siteLocation: "Nashik Corporate HQ",
+      },
+      {
+        fullName: "Rahul Sharma",
+        email: "sales.executive@avenuebuilders.in",
+        department: "CRM & Sales",
+        designation: "Senior Sales Executive",
+        role: "Sales Specialist",
+        siteLocation: "Nashik Sales Gallery",
+      },
+      {
+        fullName: "Priya Kulkarni",
+        email: "finance.lead@avenuebuilders.in",
+        department: "Finance & Accounting",
+        designation: "VP Financial Operations",
+        role: "Finance Lead",
+        siteLocation: "Nashik Corporate HQ",
+      },
+      {
+        fullName: "Vikram Patil",
+        email: "site.engineer@avenuebuilders.in",
+        department: "Site Operations",
+        designation: "Chief Site Engineer",
+        role: "Site Engineer",
+        siteLocation: "Gangapur Road Site",
+      },
+      {
+        fullName: "Neha Deshmukh",
+        email: "hr.lead@avenuebuilders.in",
+        department: "Workforce Ops",
+        designation: "Head of Human Resources",
+        role: "HR Lead",
+        siteLocation: "Nashik Corporate HQ",
+      },
+      {
+        fullName: "Suresh Mehta",
+        email: "legal.lead@avenuebuilders.in",
+        department: "Compliance & Land",
+        designation: "Senior Legal Counsel",
+        role: "Legal Lead",
+        siteLocation: "Nashik Corporate HQ",
+      },
+    ];
+
+    for (const u of seedAccounts) {
+      await prisma.$executeRaw`
+        INSERT INTO system_users (
+          tenant_id, full_name, email, department, designation, site_location, role, status
+        ) VALUES (
+          ${tenantId}::uuid, ${u.fullName}, ${u.email}, ${u.department}, ${u.designation}, ${u.siteLocation}, ${u.role}, 'ACTIVE'
+        )
+        ON CONFLICT (email) DO NOTHING
+      `;
+    }
+  }
+}
+
 export async function GET() {
   try {
-    await prisma.$executeRaw`
-      CREATE TABLE IF NOT EXISTS system_users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id UUID NOT NULL,
-        full_name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL DEFAULT 'pbkdf2_sha256$default_hash',
-        department VARCHAR(100) NOT NULL,
-        designation VARCHAR(100) NOT NULL,
-        site_location VARCHAR(255) NOT NULL DEFAULT 'Nashik Corporate Office',
-        mfa_enabled BOOLEAN NOT NULL DEFAULT true,
-        status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-        role VARCHAR(100) NOT NULL DEFAULT 'Site Engineer',
-        last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `;
+    await ensureSeedUsers();
 
     const raw = await prisma.$queryRaw<any[]>`
       SELECT * FROM system_users WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
@@ -36,7 +110,7 @@ export async function GET() {
       mfaEnabled: Boolean(u.mfa_enabled),
       status: u.status,
       role: u.role,
-      lastActive: u.last_active,
+      lastActive: u.last_active ? new Date(u.last_active).toISOString() : new Date().toISOString(),
     }));
 
     return NextResponse.json({
@@ -66,6 +140,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureSeedUsers();
     const body = await request.json();
     const { fullName, email, department, designation, role, siteLocation } = body;
     const tenantId = ACTIVE_TENANT_ID;
@@ -81,24 +156,6 @@ export async function POST(request: NextRequest) {
         meta: null,
       });
     }
-
-    await prisma.$executeRaw`
-      CREATE TABLE IF NOT EXISTS system_users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id UUID NOT NULL,
-        full_name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL DEFAULT 'pbkdf2_sha256$default_hash',
-        department VARCHAR(100) NOT NULL,
-        designation VARCHAR(100) NOT NULL,
-        site_location VARCHAR(255) NOT NULL DEFAULT 'Nashik Corporate Office',
-        mfa_enabled BOOLEAN NOT NULL DEFAULT true,
-        status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-        role VARCHAR(100) NOT NULL DEFAULT 'Site Engineer',
-        last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `;
 
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO system_users (
@@ -133,7 +190,7 @@ export async function POST(request: NextRequest) {
         mfaEnabled: Boolean(user.mfa_enabled),
         status: user.status,
         role: user.role,
-        lastActive: user.last_active,
+        lastActive: user.last_active ? new Date(user.last_active).toISOString() : new Date().toISOString(),
       },
       error: null,
       meta: null,
@@ -153,6 +210,3 @@ export async function POST(request: NextRequest) {
     });
   }
 }
-
-
-

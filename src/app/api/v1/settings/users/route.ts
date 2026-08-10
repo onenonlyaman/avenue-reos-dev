@@ -2,48 +2,103 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 
+async function ensureSeedUserAccounts() {
+  await prisma.$executeRaw`
+    CREATE TABLE IF NOT EXISTS user_accounts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id UUID NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      corporate_email VARCHAR(255) NOT NULL,
+      assigned_role VARCHAR(100) NOT NULL,
+      department VARCHAR(100) NOT NULL,
+      account_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+      last_active_date VARCHAR(50) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
+  await prisma.$executeRaw`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_email ON user_accounts (corporate_email)
+  `;
+
+  const existing = await prisma.$queryRaw<any[]>`
+    SELECT id FROM user_accounts WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1
+  `;
+
+  if (existing.length === 0) {
+    const tenantId = ACTIVE_TENANT_ID;
+    const today = new Date().toISOString().split("T")[0];
+
+    const seedAccounts = [
+      {
+        fullName: "Aman Bele",
+        corporateEmail: "aman.bele@avenuebuilders.in",
+        assignedRole: "Governance Director",
+        department: "Executive Administration",
+      },
+      {
+        fullName: "Rahul Sharma",
+        corporateEmail: "sales.executive@avenuebuilders.in",
+        assignedRole: "Sales Specialist",
+        department: "CRM & Sales",
+      },
+      {
+        fullName: "Priya Kulkarni",
+        corporateEmail: "finance.lead@avenuebuilders.in",
+        assignedRole: "Finance Lead",
+        department: "Finance & Accounting",
+      },
+      {
+        fullName: "Vikram Patil",
+        corporateEmail: "site.engineer@avenuebuilders.in",
+        assignedRole: "Site Engineer",
+        department: "Site Operations",
+      },
+      {
+        fullName: "Neha Deshmukh",
+        corporateEmail: "hr.lead@avenuebuilders.in",
+        assignedRole: "HR Lead",
+        department: "Workforce Ops",
+      },
+      {
+        fullName: "Suresh Mehta",
+        corporateEmail: "legal.lead@avenuebuilders.in",
+        assignedRole: "Legal Lead",
+        department: "Compliance & Land",
+      },
+    ];
+
+    for (const u of seedAccounts) {
+      await prisma.$executeRaw`
+        INSERT INTO user_accounts (
+          tenant_id, full_name, corporate_email, assigned_role, department, account_status, last_active_date
+        ) VALUES (
+          ${tenantId}::uuid, ${u.fullName}, ${u.corporateEmail}, ${u.assignedRole}, ${u.department}, 'ACTIVE', ${today}
+        )
+        ON CONFLICT (corporate_email) DO NOTHING
+      `;
+    }
+  }
+}
+
 export async function GET() {
   try {
-    const model = (prisma as any).userAccount;
-    let records: any[] = [];
+    await ensureSeedUserAccounts();
+    const tenantId = ACTIVE_TENANT_ID;
 
-    if (model?.findMany) {
-      records = await model.findMany({
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      try {
-        await prisma.$executeRaw`
-          CREATE TABLE IF NOT EXISTS user_accounts (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL,
-            full_name VARCHAR(255) NOT NULL,
-            corporate_email VARCHAR(255) NOT NULL,
-            assigned_role VARCHAR(100) NOT NULL,
-            department VARCHAR(100) NOT NULL,
-            account_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-            last_active_date VARCHAR(50) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `;
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM user_accounts WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
-        `;
-        records = raw || [];
-      } catch {
-        records = [];
-      }
-    }
+    const raw = await prisma.$queryRaw<any[]>`
+      SELECT * FROM user_accounts WHERE tenant_id = ${tenantId}::uuid ORDER BY created_at DESC
+    `;
 
-    const mapped = records.map((r: any) => ({
+    const mapped = (raw || []).map((r: any) => ({
       id: r.id,
-      fullName: r.fullName || r.full_name || "",
-      corporateEmail: r.corporateEmail || r.corporate_email || "",
-      assignedRole: r.assignedRole || r.assigned_role || "",
+      fullName: r.full_name || "",
+      corporateEmail: r.corporate_email || "",
+      assignedRole: r.assigned_role || "",
       department: r.department || "",
-      accountStatus: r.accountStatus || r.account_status || "ACTIVE",
-      lastActiveDate: r.lastActiveDate || r.last_active_date || new Date().toISOString().split("T")[0],
+      accountStatus: r.account_status || "ACTIVE",
+      lastActiveDate: r.last_active_date || new Date().toISOString().split("T")[0],
     }));
 
     return NextResponse.json({
@@ -73,6 +128,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    await ensureSeedUserAccounts();
     const body = await request.json();
     const { fullName, corporateEmail, assignedRole, department } = body;
     const tenantId = ACTIVE_TENANT_ID;
@@ -89,52 +145,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const model = (prisma as any).userAccount;
-    let created: any = null;
+    const inserted = await prisma.$queryRaw<any[]>`
+      INSERT INTO user_accounts (
+        tenant_id, full_name, corporate_email, assigned_role,
+        department, account_status, last_active_date
+      ) VALUES (
+        ${tenantId}::uuid, ${fullName}, ${corporateEmail}, ${assignedRole},
+        ${department || "Operations"}, 'ACTIVE', ${new Date().toISOString().split("T")[0]}
+      )
+      ON CONFLICT (corporate_email) DO UPDATE SET
+        full_name = ${fullName},
+        assigned_role = ${assignedRole},
+        department = ${department || "Operations"}
+      RETURNING *
+    `;
 
-    if (model?.create) {
-      created = await model.create({
-        data: {
-          tenantId,
-          fullName,
-          corporateEmail,
-          assignedRole,
-          department: department || "Operations",
-          accountStatus: "ACTIVE",
-          lastActiveDate: new Date().toISOString().split("T")[0],
-        },
-      });
-    } else {
-      try {
-        await prisma.$executeRaw`
-          CREATE TABLE IF NOT EXISTS user_accounts (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL,
-            full_name VARCHAR(255) NOT NULL,
-            corporate_email VARCHAR(255) NOT NULL,
-            assigned_role VARCHAR(100) NOT NULL,
-            department VARCHAR(100) NOT NULL,
-            account_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-            last_active_date VARCHAR(50) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `;
-        const inserted = await prisma.$queryRaw<any[]>`
-          INSERT INTO user_accounts (
-            tenant_id, full_name, corporate_email, assigned_role,
-            department, account_status, last_active_date
-          ) VALUES (
-            ${tenantId}::uuid, ${fullName}, ${corporateEmail}, ${assignedRole},
-            ${department || "Operations"}, 'ACTIVE', ${new Date().toISOString().split("T")[0]}
-          )
-          RETURNING *
-        `;
-        created = inserted[0];
-      } catch (err: unknown) {
-        throw new Error(err instanceof Error ? err.message : "User account could not be saved");
-      }
-    }
+    const created = inserted[0];
 
     return NextResponse.json({
       success: true,
@@ -143,12 +169,12 @@ export async function POST(request: NextRequest) {
       request_id: `req-${Date.now()}`,
       data: {
         id: created.id,
-        fullName: created.fullName || created.full_name,
-        corporateEmail: created.corporateEmail || created.corporate_email,
-        assignedRole: created.assignedRole || created.assigned_role,
+        fullName: created.full_name,
+        corporateEmail: created.corporate_email,
+        assignedRole: created.assigned_role,
         department: created.department,
-        accountStatus: created.accountStatus || created.account_status || "ACTIVE",
-        lastActiveDate: created.lastActiveDate || created.last_active_date,
+        accountStatus: created.account_status || "ACTIVE",
+        lastActiveDate: created.last_active_date,
       },
       error: null,
       meta: null,
@@ -168,6 +194,3 @@ export async function POST(request: NextRequest) {
     });
   }
 }
-
-
-
