@@ -9,6 +9,20 @@ export const dynamic = "force-dynamic";
  * any register that is missing tenant scoping — the previous implementation asserted
  * `migrationStatus: "UP_TO_DATE"` unconditionally, which could never surface drift.
  */
+/**
+ * Tables that correctly carry no `tenant_id`.
+ *
+ * `schema_migrations` is deployment metadata. `password_reset_tokens` is scoped through
+ * its foreign key to `system_users`. `auth_login_attempts` records failures keyed by
+ * address and origin, which must be countable before any account is identified.
+ * Everything else holding business records must be tenant-scoped.
+ */
+const INFRASTRUCTURE_TABLES = new Set([
+  "schema_migrations",
+  "password_reset_tokens",
+  "auth_login_attempts",
+]);
+
 export async function GET(request: NextRequest) {
   const auth = await requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
@@ -29,6 +43,10 @@ export async function GET(request: NextRequest) {
         )
     `;
 
+    const unscopedBusinessRegisters = untenanted
+      .map((t) => t.table_name)
+      .filter((name) => !INFRASTRUCTURE_TABLES.has(name));
+
     const activeConnections = await prisma.$queryRaw<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM pg_stat_activity WHERE datname = current_database()
     `;
@@ -39,8 +57,8 @@ export async function GET(request: NextRequest) {
 
     return envelope(200, {
       data: {
-        tenantIsolationEnforced: untenanted.length === 0,
-        registersWithoutTenantScope: untenanted.map((t) => t.table_name),
+        tenantIsolationEnforced: unscopedBusinessRegisters.length === 0,
+        registersWithoutTenantScope: unscopedBusinessRegisters,
         totalTableCount: tables.length,
         connectionPoolActive: Number(activeConnections[0]?.count ?? 0),
         connectionPoolMax: CONFIGURED_POOL_SIZE,
