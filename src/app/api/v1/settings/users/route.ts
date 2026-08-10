@@ -18,9 +18,22 @@ async function ensureSeedUserAccounts() {
     )
   `;
 
-  await prisma.$executeRaw`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_email ON user_accounts (corporate_email)
-  `;
+  try {
+    await prisma.$executeRaw`
+      DELETE FROM user_accounts a
+      USING user_accounts b
+      WHERE a.created_at > b.created_at
+        AND LOWER(a.corporate_email) = LOWER(b.corporate_email)
+    `;
+  } catch {
+  }
+
+  try {
+    await prisma.$executeRaw`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_email ON user_accounts (LOWER(corporate_email))
+    `;
+  } catch {
+  }
 
   const existing = await prisma.$queryRaw<any[]>`
     SELECT id FROM user_accounts WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1
@@ -70,14 +83,17 @@ async function ensureSeedUserAccounts() {
     ];
 
     for (const u of seedAccounts) {
-      await prisma.$executeRaw`
-        INSERT INTO user_accounts (
-          tenant_id, full_name, corporate_email, assigned_role, department, account_status, last_active_date
-        ) VALUES (
-          ${tenantId}::uuid, ${u.fullName}, ${u.corporateEmail}, ${u.assignedRole}, ${u.department}, 'ACTIVE', ${today}
-        )
-        ON CONFLICT (corporate_email) DO NOTHING
-      `;
+      try {
+        await prisma.$executeRaw`
+          INSERT INTO user_accounts (
+            tenant_id, full_name, corporate_email, assigned_role, department, account_status, last_active_date
+          ) VALUES (
+            ${tenantId}::uuid, ${u.fullName}, ${u.corporateEmail}, ${u.assignedRole}, ${u.department}, 'ACTIVE', ${today}
+          )
+          ON CONFLICT DO NOTHING
+        `;
+      } catch {
+      }
     }
   }
 }
@@ -153,14 +169,18 @@ export async function POST(request: NextRequest) {
         ${tenantId}::uuid, ${fullName}, ${corporateEmail}, ${assignedRole},
         ${department || "Operations"}, 'ACTIVE', ${new Date().toISOString().split("T")[0]}
       )
-      ON CONFLICT (corporate_email) DO UPDATE SET
-        full_name = ${fullName},
-        assigned_role = ${assignedRole},
-        department = ${department || "Operations"}
+      ON CONFLICT DO NOTHING
       RETURNING *
     `;
 
-    const created = inserted[0];
+    let created = inserted && inserted.length > 0 ? inserted[0] : null;
+
+    if (!created) {
+      const fetched = await prisma.$queryRaw<any[]>`
+        SELECT * FROM user_accounts WHERE LOWER(corporate_email) = LOWER(${corporateEmail}) LIMIT 1
+      `;
+      created = fetched[0];
+    }
 
     return NextResponse.json({
       success: true,
