@@ -80,9 +80,10 @@ node scripts/manage-admin.mjs suspend sales.executive@avenuebuilders.in
 
 ## 4. Build
 
-The server has 4 GB of RAM. The default build parallelism (one worker per core) exhausts it.
+The server has 4 GB of RAM. The default build parallelism (one worker per core) exhausts it. Ensure Prisma client is generated with the latest schema before building:
 
 ```bash
+npx prisma generate
 NODE_OPTIONS=--max-old-space-size=4096 BUILD_WORKERS=1 npm run build
 pm2 restart avenue-app --update-env
 ```
