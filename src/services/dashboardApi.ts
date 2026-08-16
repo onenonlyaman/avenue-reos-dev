@@ -108,7 +108,7 @@ async function fetchEnvelope<T>(url: string, options?: RequestInit): Promise<T> 
 }
 
 export const dashboardApi = {
-  async getSummary(): Promise<DashboardSummary> {
-    return fetchEnvelope<DashboardSummary>(`${API_BASE}/summary`);
+  async getSummary(options?: RequestInit): Promise<DashboardSummary> {
+    return fetchEnvelope<DashboardSummary>(`${API_BASE}/summary`, options);
   },
 };

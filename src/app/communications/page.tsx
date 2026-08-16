@@ -31,64 +31,54 @@ export default function CommunicationsPage() {
 
   return (
     <div className="space-y-6 pb-8">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <CorporatePageHeader
-          title="Unified Communications & Support Desk Workspace"
-          badgeText="ENTERPRISE COMMUNICATIONS"
-        />
-
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2 text-xs font-semibold shrink-0 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
-          onClick={() => setIsHitlDrawerOpen(true)}
-        >
-          <ShieldCheck className="h-4 w-4 text-amber-700" />
-          <span>Governance Queue</span>
-          {pendingHitlCount > 0 && (
-            <span className="ml-1 bg-amber-700 text-white rounded-full px-1.5 py-0.5 text-[10px] font-mono font-bold">
-              {pendingHitlCount}
-            </span>
-          )}
-        </Button>
-      </div>
+      <CorporatePageHeader
+        title="Unified Communications & Support Desk Workspace"
+        badgeText="ENTERPRISE COMMUNICATIONS"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 text-xs font-semibold shrink-0 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
+            onClick={() => setIsHitlDrawerOpen(true)}
+          >
+            <ShieldCheck className="h-4 w-4 text-amber-700" />
+            <span>Governance Queue</span>
+            {pendingHitlCount > 0 && (
+              <span className="ml-1 bg-amber-700 text-white rounded-full px-1.5 py-0.5 text-[10px] font-mono font-bold">
+                {pendingHitlCount}
+              </span>
+            )}
+          </Button>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="chat"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="chat" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <MessageSquare className="h-3.5 w-3.5" />
             Internal Workplace Chat
           </TabsTrigger>
 
-          <TabsTrigger
-            value="support"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="support" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Headset className="h-3.5 w-3.5" />
             Customer Support Desk
           </TabsTrigger>
 
-          <TabsTrigger
-            value="timeline"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="timeline" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <History className="h-3.5 w-3.5" />
             Customer Interaction History
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chat" className="outline-none space-y-4 pt-2">
+        <TabsContent value="chat" className="outline-none space-y-4">
           <InternalChatView />
         </TabsContent>
 
-        <TabsContent value="support" className="outline-none space-y-4 pt-2">
+        <TabsContent value="support" className="outline-none space-y-4">
           <SupportDeskView />
         </TabsContent>
 
-        <TabsContent value="timeline" className="outline-none space-y-4 pt-2">
+        <TabsContent value="timeline" className="outline-none space-y-4">
           <CustomerTimelineView />
         </TabsContent>
       </Tabs>

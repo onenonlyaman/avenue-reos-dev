@@ -15,6 +15,7 @@ interface ContractorBillsViewProps {
   selectedProject: string;
   onProjectChange: (project: string) => void;
   onOpenApprovalDrawer?: () => void;
+  refreshTrigger?: number;
 }
 
 export function ContractorBillsView({
@@ -22,6 +23,7 @@ export function ContractorBillsView({
   selectedProject,
   onProjectChange,
   onOpenApprovalDrawer,
+  refreshTrigger = 0,
 }: ContractorBillsViewProps) {
   const [bills, setBills] = useState<ContractorRaBill[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -43,7 +45,8 @@ export function ContractorBillsView({
 
   useEffect(() => {
     loadBills();
-  }, [selectedProject]);
+  }, [selectedProject, refreshTrigger]);
+
 
   const handleBillSubmitted = (newBill: ContractorRaBill) => {
     setBills((prev) => [newBill, ...prev]);
@@ -120,7 +123,7 @@ export function ContractorBillsView({
           icon={FileText}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>

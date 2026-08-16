@@ -3,6 +3,21 @@ import { prisma, runtimeDdl } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
+const DEFAULT_ROLES = [
+  { roleName: "Super Admin", canRead: true, canCreate: true, canUpdate: true, canDelete: true, canAuthorizeHitl: true },
+  { roleName: "Governance Director", canRead: true, canCreate: true, canUpdate: true, canDelete: true, canAuthorizeHitl: true },
+  { roleName: "Finance Lead", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: true },
+  { roleName: "Accountant", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: false },
+  { roleName: "Auditor", canRead: true, canCreate: false, canUpdate: false, canDelete: false, canAuthorizeHitl: false },
+  { roleName: "Site Engineer", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: false },
+  { roleName: "Construction Manager", canRead: true, canCreate: true, canUpdate: true, canDelete: true, canAuthorizeHitl: true },
+  { roleName: "Sales Lead", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: true },
+  { roleName: "Sales Executive", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: false },
+  { roleName: "HR Manager", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: true },
+  { roleName: "Legal Lead", canRead: true, canCreate: true, canUpdate: true, canDelete: false, canAuthorizeHitl: true },
+  { roleName: "Regulatory Officer", canRead: true, canCreate: false, canUpdate: false, canDelete: false, canAuthorizeHitl: false },
+];
+
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
@@ -13,26 +28,55 @@ export async function GET(request: NextRequest) {
 
     if (model?.findMany) {
       records = await model.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
+      if (records.length === 0) {
+        for (const r of DEFAULT_ROLES) {
+          await model.create({
+            data: {
+              tenantId: ACTIVE_TENANT_ID,
+              ...r,
+            },
+          });
+        }
+        records = await model.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
+      }
     } else {
       try {
         await runtimeDdl("table:system_role_permissions", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS system_role_permissions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
-            role_name VARCHAR(100) UNIQUE NOT NULL,
+            role_name VARCHAR(100) NOT NULL,
             can_read BOOLEAN NOT NULL DEFAULT true,
             can_create BOOLEAN NOT NULL DEFAULT false,
             can_update BOOLEAN NOT NULL DEFAULT false,
             can_delete BOOLEAN NOT NULL DEFAULT false,
             can_authorize_hitl BOOLEAN NOT NULL DEFAULT false,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_tenant_role UNIQUE (tenant_id, role_name)
           )
         `);
         const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM system_role_permissions WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid
+          SELECT * FROM system_role_permissions WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY role_name ASC
         `;
-        records = raw || [];
+        if (!raw || raw.length === 0) {
+          for (const r of DEFAULT_ROLES) {
+            await prisma.$executeRaw`
+              INSERT INTO system_role_permissions (
+                tenant_id, role_name, can_read, can_create, can_update, can_delete, can_authorize_hitl
+              ) VALUES (
+                ${ACTIVE_TENANT_ID}::uuid, ${r.roleName}, ${r.canRead}, ${r.canCreate}, ${r.canUpdate}, ${r.canDelete}, ${r.canAuthorizeHitl}
+              )
+              ON CONFLICT (tenant_id, role_name) DO NOTHING
+            `;
+          }
+          const seeded = await prisma.$queryRaw<any[]>`
+            SELECT * FROM system_role_permissions WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY role_name ASC
+          `;
+          records = seeded || [];
+        } else {
+          records = raw;
+        }
       } catch {
         records = [];
       }
@@ -95,25 +139,34 @@ export async function POST(request: NextRequest) {
 
     const model = (prisma as any).systemRolePermission;
     if (model?.upsert) {
-      await model.upsert({
-        where: { roleName },
-        update: { canRead, canCreate, canUpdate, canDelete, canAuthorizeHitl },
-        create: { tenantId, roleName, canRead, canCreate, canUpdate, canDelete, canAuthorizeHitl },
+      const existing = await model.findFirst({
+        where: { tenantId, roleName },
       });
+      if (existing) {
+        await model.update({
+          where: { id: existing.id },
+          data: { canRead, canCreate, canUpdate, canDelete, canAuthorizeHitl },
+        });
+      } else {
+        await model.create({
+          data: { tenantId, roleName, canRead, canCreate, canUpdate, canDelete, canAuthorizeHitl },
+        });
+      }
     } else {
       try {
         await runtimeDdl("table:system_role_permissions", () => prisma.$executeRaw`
           CREATE TABLE IF NOT EXISTS system_role_permissions (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             tenant_id UUID NOT NULL,
-            role_name VARCHAR(100) UNIQUE NOT NULL,
+            role_name VARCHAR(100) NOT NULL,
             can_read BOOLEAN NOT NULL DEFAULT true,
             can_create BOOLEAN NOT NULL DEFAULT false,
             can_update BOOLEAN NOT NULL DEFAULT false,
             can_delete BOOLEAN NOT NULL DEFAULT false,
             can_authorize_hitl BOOLEAN NOT NULL DEFAULT false,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_tenant_role UNIQUE (tenant_id, role_name)
           )
         `);
         await prisma.$executeRaw`
@@ -122,7 +175,7 @@ export async function POST(request: NextRequest) {
           ) VALUES (
             ${tenantId}::uuid, ${roleName}, ${canRead}, ${canCreate}, ${canUpdate}, ${canDelete}, ${canAuthorizeHitl}
           )
-          ON CONFLICT (role_name) DO UPDATE SET
+          ON CONFLICT (tenant_id, role_name) DO UPDATE SET
             can_read = ${canRead},
             can_create = ${canCreate},
             can_update = ${canUpdate},
@@ -159,5 +212,6 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 
 

@@ -28,6 +28,7 @@ export interface PurchaseOrder {
   deliveryDueDate: string;
   requiresHitl: boolean;
   status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "DISPATCHED";
+  rejectionReason?: string | null;
   quantity: number;
   unitRate: number;
   freightAmount: number;

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { requireApiAccess, safeErrorMessage, envelope } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
@@ -24,7 +23,10 @@ export async function GET(request: NextRequest) {
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM ai_documents_legal WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
+      SELECT * FROM ai_documents_legal
+      WHERE tenant_id = ${auth.user.tenantId}::uuid
+      ORDER BY created_at DESC
+      LIMIT 100
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -70,21 +72,33 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { documentTitle, documentType, targetProjectOrBuyer, summaryText } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const tenantId = auth.user.tenantId;
 
-    if (!documentTitle || !documentType) {
-      return NextResponse.json({
-        success: false,
-        status_code: 400,
-        timestamp: new Date().toISOString(),
-        request_id: `req-${Date.now()}`,
-        data: null,
-        error: { code: "MISSING_FIELDS", message: "Document title and type are required." },
-        meta: null,
-      }, { status: 400 });
+    if (!documentTitle || typeof documentTitle !== "string" || !documentTitle.trim()) {
+      return envelope(400, {
+        error: { code: "MISSING_TITLE", message: "Document title is required." },
+      });
     }
 
-    const isLegalDeed = documentType === "Legal Deed" || documentType === "Sale Agreement" || documentType === "Possession Affidavit";
+    if (!documentType || typeof documentType !== "string" || !documentType.trim()) {
+      return envelope(400, {
+        error: { code: "MISSING_TYPE", message: "Document type is required." },
+      });
+    }
+
+    const trimmedProject = (targetProjectOrBuyer && typeof targetProjectOrBuyer === "string")
+      ? targetProjectOrBuyer.trim()
+      : "General Corporate Repository";
+
+    const trimmedSummary = (summaryText && typeof summaryText === "string")
+      ? summaryText.trim()
+      : "Document generated and stored in corporate records.";
+
+    const isLegalDeed =
+      documentType === "Legal Deed" ||
+      documentType === "Sale Agreement" ||
+      documentType === "Possession Affidavit";
+
     const requiresHitl = isLegalDeed;
     const status = requiresHitl ? "PENDING_APPROVAL" : "VERIFIED";
 
@@ -103,45 +117,41 @@ export async function POST(request: NextRequest) {
       )
     `);
 
-    const inserted = await prisma.$queryRaw<any[]>`
-      INSERT INTO ai_documents_legal (
-        tenant_id, document_title, document_type, target_project_or_buyer,
-        generation_timestamp, verification_status, requires_hitl, summary_text
-      ) VALUES (
-        ${tenantId}::uuid, ${documentTitle}, ${documentType}, ${targetProjectOrBuyer || "Gangapur Road Site"},
-        NOW(), ${status}, ${requiresHitl}, ${summaryText || "AI generated document draft"}
-      )
-      RETURNING *
-    `;
-
-    const created = inserted[0];
-
-    if (requiresHitl) {
-      await runtimeDdl("table:ai_intelligence_approvals", () => prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS ai_intelligence_approvals (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          tenant_id UUID NOT NULL,
-          title VARCHAR(255) NOT NULL,
-          category VARCHAR(100) NOT NULL,
-          target_reference VARCHAR(255) NOT NULL,
-          amount NUMERIC(15,2) NOT NULL DEFAULT 0,
-          justification TEXT NOT NULL,
-          status VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
-          requires_hitl BOOLEAN NOT NULL DEFAULT true,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `);
-
-      await prisma.$executeRaw`
-        INSERT INTO ai_intelligence_approvals (
-          tenant_id, title, category, target_reference, amount, justification, status, requires_hitl
+    // Execute atomic dual-write transaction linking Document and Governance Approval
+    const created = await prisma.$transaction(async (tx) => {
+      const inserted = await tx.$queryRaw<any[]>`
+        INSERT INTO ai_documents_legal (
+          tenant_id, document_title, document_type, target_project_or_buyer,
+          generation_timestamp, verification_status, requires_hitl, summary_text
         ) VALUES (
-          ${tenantId}::uuid, ${documentTitle}, 'LEGAL_DEED', ${targetProjectOrBuyer || "Gangapur Road Site"},
-          0, 'Executable legal deed generation requires Governance Director verification',
-          'PENDING_APPROVAL', true
+          ${tenantId}::uuid, ${documentTitle.trim()}, ${documentType.trim()}, ${trimmedProject},
+          NOW(), ${status}, ${requiresHitl}, ${trimmedSummary}
         )
+        RETURNING *
       `;
-    }
+
+      const doc = inserted[0];
+
+      if (requiresHitl) {
+        await tx.$executeRaw`
+          INSERT INTO ai_intelligence_approvals (
+            tenant_id, title, category, target_reference, target_id, amount, justification, status, requires_hitl
+          ) VALUES (
+            ${tenantId}::uuid,
+            ${documentTitle.trim()},
+            'LEGAL_DEED',
+            ${trimmedProject},
+            ${doc.id}::uuid,
+            0,
+            'High-stakes legal instrument requires Governance Director verification before execution',
+            'PENDING_APPROVAL',
+            true
+          )
+        `;
+      }
+
+      return doc;
+    });
 
     return NextResponse.json({
       success: true,
@@ -176,6 +186,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-

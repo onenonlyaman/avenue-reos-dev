@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { requireAdmin, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireApiAccess(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
 
   try {
     const body = await request.json();
-    const { id } = body;
+    const { id, reason } = body;
+    const tenantId = auth.user.tenantId;
 
     if (!id) {
       return NextResponse.json({
@@ -22,10 +23,40 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    const existing = await prisma.$queryRaw<any[]>`
+      SELECT * FROM integration_approvals 
+      WHERE id = ${id}::uuid AND tenant_id = ${tenantId}::uuid AND status = 'PENDING_APPROVAL'
+      LIMIT 1
+    `;
+
+    if (!existing || existing.length === 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 404,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "NOT_FOUND", message: "Pending integration approval request was not found or already processed" },
+        meta: null,
+      }, { status: 404 });
+    }
+
+    const item = existing[0];
+
     await prisma.$executeRaw`
       UPDATE integration_approvals
       SET status = 'REJECTED'
-      WHERE id = ${id}::uuid
+      WHERE id = ${id}::uuid AND tenant_id = ${tenantId}::uuid
+    `;
+
+    // Insert audit log
+    await prisma.$executeRaw`
+      INSERT INTO integration_logs (
+        tenant_id, provider_name, endpoint, payload_type, response_status, latency_ms
+      ) VALUES (
+        ${tenantId}::uuid, ${item.connector_name}, '/approvals/reject',
+        ${`Rejected: ${item.action_type} - ${reason || "Governance Rejection"}`}, 'FAILED', 110
+      )
     `;
 
     return NextResponse.json({
@@ -33,7 +64,7 @@ export async function POST(request: NextRequest) {
       status_code: 200,
       timestamp: new Date().toISOString(),
       request_id: `req-${Date.now()}`,
-      data: { success: true, id },
+      data: { success: true, id, status: "REJECTED", reason: reason || "Rejected by Governance Director" },
       error: null,
       meta: null,
     });

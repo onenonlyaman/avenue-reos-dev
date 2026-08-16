@@ -96,39 +96,6 @@ export const systemApi = {
   },
 
   async getHitlSummary(): Promise<HitlGateSummary> {
-    const [finance, constr, proc, fac, leg, board] = await Promise.allSettled([
-      fetch("/api/v1/finance/approvals").then((r) => r.json()),
-      fetch("/api/v1/construction/ra-bills/pending").then((r) => r.json()),
-      fetch("/api/v1/procurement/approvals").then((r) => r.json()),
-      fetch("/api/v1/facility/approvals").then((r) => r.json()),
-      fetch("/api/v1/legal/approvals").then((r) => r.json()),
-      fetch("/api/v1/analytics/approvals").then((r) => r.json()),
-    ]);
-
-    const getCount = (res: PromiseSettledResult<any>) =>
-      res.status === "fulfilled" && res.value?.data ? res.value.data.length : 0;
-
-    const financePendingCount = getCount(finance);
-    const constructionPendingCount = getCount(constr);
-    const procurementPendingCount = getCount(proc);
-    const facilityPendingCount = getCount(fac);
-    const legalPendingCount = getCount(leg);
-    const boardPendingCount = getCount(board);
-
-    return {
-      financePendingCount,
-      constructionPendingCount,
-      procurementPendingCount,
-      facilityPendingCount,
-      legalPendingCount,
-      boardPendingCount,
-      totalPendingHitl:
-        financePendingCount +
-        constructionPendingCount +
-        procurementPendingCount +
-        facilityPendingCount +
-        legalPendingCount +
-        boardPendingCount,
-    };
+    return fetchEnvelope<HitlGateSummary>(`${API_BASE}/hitl-summary`);
   },
 };

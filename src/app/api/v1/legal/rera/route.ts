@@ -1,51 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
+import { prisma } from "@/lib/db";
+import { ensureReraComplianceRegister } from "@/lib/legalDb";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { LAKH_IN_RUPEES } from "@/lib/governance";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
-
-async function ensureReraComplianceRegister() {
-  await runtimeDdl("table:rera_compliances", () => prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS rera_compliances (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      tenant_id UUID NOT NULL,
-      project_name VARCHAR(255) NOT NULL,
-      rera_reg_reference VARCHAR(100) NOT NULL,
-      quarterly_return_status VARCHAR(50) NOT NULL DEFAULT 'COMPLIANT',
-      escrow_balance_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
-      form1_status BOOLEAN NOT NULL DEFAULT false,
-      form2_status BOOLEAN NOT NULL DEFAULT false,
-      form3_status BOOLEAN NOT NULL DEFAULT false,
-      certificate_audit_status VARCHAR(100) NOT NULL DEFAULT 'Compliant',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-}
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
+    await ensureReraComplianceRegister();
+
     const model = (prisma as any).reraCompliance;
     let records: any[] = [];
 
     if (model?.findMany) {
       records = await model.findMany({
-        where: { tenantId: ACTIVE_TENANT_ID },
+        where: { tenantId },
         orderBy: { createdAt: "desc" },
       });
     } else {
-      try {
-        await ensureReraComplianceRegister();
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM rera_compliances WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
-        `;
-        records = raw || [];
-      } catch {
-        records = [];
-      }
+      const raw = await prisma.$queryRaw<any[]>`
+        SELECT * FROM rera_compliances
+        WHERE tenant_id = ${tenantId}::uuid
+        ORDER BY created_at DESC
+      `;
+      records = raw || [];
     }
 
     const mapped = records.map((r: any) => ({
@@ -60,6 +43,7 @@ export async function GET(request: NextRequest) {
       form2Status: Boolean(r.form2Status ?? r.form2_status),
       form3Status: Boolean(r.form3Status ?? r.form3_status),
       certificateAuditStatus: r.certificateAuditStatus || r.certificate_audit_status || "Compliant",
+      createdAt: r.createdAt || r.created_at || new Date().toISOString(),
     }));
 
     return NextResponse.json({
@@ -91,11 +75,13 @@ export async function POST(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
     const body = await request.json();
+    const projectName = (body.projectName || "").trim();
+    const reraRegReference = (body.reraRegReference || "").trim();
     const {
-      projectName,
-      reraRegReference,
       quarterlyReturnStatus,
       escrowBalanceLakhs,
       form1Status,
@@ -113,11 +99,21 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "INCOMPLETE_RERA_RECORD",
-          message: "Development name and MahaRERA registration reference are required",
+          message: "Development name and MahaRERA registration reference are required.",
         },
         meta: null,
       }, { status: 400 });
     }
+
+    const rawEscrow = Number(escrowBalanceLakhs);
+    const escrowLakhsVal = Number.isFinite(rawEscrow) && rawEscrow >= 0 ? rawEscrow : 0;
+    const escrowRupees = escrowLakhsVal * LAKH_IN_RUPEES;
+
+    const validReturns = ["COMPLIANT", "PENDING", "PENDING_FILING", "OVERDUE"];
+    const qReturn = validReturns.includes(quarterlyReturnStatus) ? quarterlyReturnStatus : "COMPLIANT";
+
+    const validCertStatuses = ["Compliant", "Under Review", "Pending Certification", "Overdue Filing", "Lapsed"];
+    const certStatus = validCertStatuses.includes(certificateAuditStatus) ? certificateAuditStatus : "Compliant";
 
     await ensureReraComplianceRegister();
 
@@ -126,11 +122,20 @@ export async function POST(request: NextRequest) {
         tenant_id, project_name, rera_reg_reference, quarterly_return_status, escrow_balance_amount,
         form1_status, form2_status, form3_status, certificate_audit_status
       ) VALUES (
-        ${ACTIVE_TENANT_ID}::uuid, ${projectName}, ${reraRegReference}, ${quarterlyReturnStatus || "COMPLIANT"},
-        ${(Number(escrowBalanceLakhs) || 0) * LAKH_IN_RUPEES},
+        ${tenantId}::uuid, ${projectName}, ${reraRegReference}, ${qReturn},
+        ${escrowRupees},
         ${Boolean(form1Status)}, ${Boolean(form2Status)}, ${Boolean(form3Status)},
-        ${certificateAuditStatus || "Compliant"}
+        ${certStatus}
       )
+      ON CONFLICT (tenant_id, rera_reg_reference) DO UPDATE
+      SET project_name = EXCLUDED.project_name,
+          quarterly_return_status = EXCLUDED.quarterly_return_status,
+          escrow_balance_amount = EXCLUDED.escrow_balance_amount,
+          form1_status = EXCLUDED.form1_status,
+          form2_status = EXCLUDED.form2_status,
+          form3_status = EXCLUDED.form3_status,
+          certificate_audit_status = EXCLUDED.certificate_audit_status,
+          updated_at = NOW()
       RETURNING *
     `;
 
@@ -151,6 +156,7 @@ export async function POST(request: NextRequest) {
         form2Status: Boolean(created.form2_status),
         form3Status: Boolean(created.form3_status),
         certificateAuditStatus: created.certificate_audit_status,
+        createdAt: created.created_at,
       },
       error: null,
       meta: null,

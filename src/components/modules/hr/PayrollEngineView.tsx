@@ -3,9 +3,11 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { DollarSign, ShieldAlert, Receipt, Play, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
+import { DollarSign, ShieldAlert, Receipt, Play, AlertCircle, Loader2, ListCollapse } from "lucide-react";
 import { hrApi, PayrollRun } from "@/services/hrApi";
 
 interface PayrollEngineViewProps {
@@ -14,8 +16,12 @@ interface PayrollEngineViewProps {
 
 export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) {
   const [payroll, setPayroll] = useState<PayrollRun | null>(null);
+  const [cycleMonth, setCycleMonth] = useState<string>(
+    new Date().toLocaleString("en-US", { month: "long", year: "numeric" })
+  );
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [showItemized, setShowItemized] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -24,6 +30,9 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
       setError(null);
       const data = await hrApi.getPayroll();
       setPayroll(data);
+      if (data?.cycleMonth) {
+        setCycleMonth(data.cycleMonth);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Payroll cycle data could not be loaded");
     } finally {
@@ -34,11 +43,8 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
   const handleProcessPayroll = async () => {
     try {
       setIsProcessing(true);
-      const updated = await hrApi.processPayrollRun({
-        cycleMonth: "August 2026",
-        totalGrossSalary: 1450000,
-        netPayable: 1280000,
-      });
+      setError(null);
+      const updated = await hrApi.processPayrollRun({ cycleMonth });
       setPayroll(updated);
       if (updated.requiresHitl) {
         onOpenHitlDrawer();
@@ -54,6 +60,9 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
     loadData();
   }, []);
 
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center text-xs text-muted-foreground space-y-2 bg-card rounded-lg border border-border">
@@ -63,10 +72,10 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
     );
   }
 
-  if (error) {
+  if (error && !payroll) {
     return (
       <CorporateEmptyState
-        title="Payroll Engine Service Unreachable"
+        title="Payroll Engine Error"
         description={error}
         actionLabel="Retry"
         onAction={loadData}
@@ -75,9 +84,6 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
     );
   }
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border border-border shadow-xs">
@@ -85,13 +91,18 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
           <h3 className="text-sm font-bold font-heading text-foreground">
             Automated Payroll Batch Run & Indian Statutory Deductions Engine
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time computation from active workforce directory, EPFO Provident Fund, ESIC, and Maharashtra Professional Tax.
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs font-semibold">
-            <Receipt className="h-3.5 w-3.5" />
-            Reimburse Employee Bills
-          </Button>
+          <Input
+            value={cycleMonth}
+            onChange={(e) => setCycleMonth(e.target.value)}
+            placeholder="e.g. August 2026"
+            className="h-8 text-xs w-36 font-semibold"
+          />
 
           <Button
             size="sm"
@@ -104,15 +115,21 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
             ) : (
               <Play className="h-3.5 w-3.5" />
             )}
-            Process Monthly Payroll Run
+            Run Payroll Batch
           </Button>
         </div>
       </div>
 
+      {error && (
+        <div className="p-3 text-xs bg-red-50 text-red-900 border border-red-200 rounded">
+          {error}
+        </div>
+      )}
+
       {!payroll ? (
         <CorporateEmptyState
           title="No Active Payroll Cycle Initialized"
-          description="No payroll run has been processed for the current month. Click below to initiate the automated salary calculation for all active site and HQ personnel."
+          description="No payroll run has been processed for the current month. Click below to initiate automated salary calculations from active employee records."
           actionLabel="Process Monthly Payroll Run"
           onAction={handleProcessPayroll}
           icon={DollarSign}
@@ -141,7 +158,7 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
             <CorporateStatCard
               label="Approved Site Expense Bills"
               value={formatCurrency(payroll.approvedExpenses)}
-              subtext="Travel & Imprest Bills"
+              subtext="Travel & Imprest Claims"
               icon={Receipt}
               trend="Reimbursements Batch"
               trendDirection="up"
@@ -168,7 +185,19 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
                 </p>
               </div>
 
-              <div>
+              <div className="flex items-center gap-2">
+                {payroll.items && payroll.items.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => setShowItemized(!showItemized)}
+                  >
+                    <ListCollapse className="h-3.5 w-3.5" />
+                    {showItemized ? "Hide Salary Slips" : `View ${payroll.items.length} Salary Slips`}
+                  </Button>
+                )}
+
                 {payroll.status === "PENDING_APPROVAL" ? (
                   <Badge variant="outline" className="text-xs font-bold bg-amber-100 text-amber-900 border-amber-300">
                     PENDING GOVERNANCE AUTHORIZATION
@@ -188,15 +217,15 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
               <div className="space-y-2">
                 <div className="flex justify-between py-1 border-b border-border/50">
-                  <span className="text-muted-foreground">Basic Salary & HRA Allocation</span>
-                  <span className="font-bold text-foreground">{formatCurrency(payroll.totalGrossSalary * 0.85)}</span>
+                  <span className="text-muted-foreground">Total Gross Salary</span>
+                  <span className="font-bold text-foreground">{formatCurrency(payroll.totalGrossSalary)}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/50">
-                  <span className="text-muted-foreground">Provident Fund (Employees' Share 12%)</span>
+                  <span className="text-muted-foreground">Provident Fund (Employee Share 12%)</span>
                   <span className="font-bold text-foreground">{formatCurrency(payroll.totalPfDeduction)}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/50">
-                  <span className="text-muted-foreground">ESIC Contribution (0.75%)</span>
+                  <span className="text-muted-foreground">ESIC Contribution (0.75% where applicable)</span>
                   <span className="font-bold text-foreground">{formatCurrency(payroll.totalEsicDeduction)}</span>
                 </div>
                 <div className="flex justify-between py-1">
@@ -239,6 +268,66 @@ export function PayrollEngineView({ onOpenHitlDrawer }: PayrollEngineViewProps) 
               </div>
             )}
           </div>
+
+          {showItemized && payroll.items && (
+            <div className="bg-card rounded-lg border border-border shadow-xs overflow-hidden">
+              <div className="p-4 border-b border-border bg-muted/20">
+                <h4 className="text-xs font-bold text-foreground">
+                  Itemized Employee Salary Slips ({payroll.items.length} records)
+                </h4>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/40">
+                    <TableRow>
+                      <TableHead className="text-xs font-semibold">Employee</TableHead>
+                      <TableHead className="text-xs font-semibold">Designation</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">Basic</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">Allowances</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">Gross</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">PF (12%)</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">ESIC</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">PT</TableHead>
+                      <TableHead className="text-xs font-semibold text-right">Net Payable</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payroll.items.map((item, idx) => (
+                      <TableRow key={idx} className="hover:bg-muted/30">
+                        <TableCell className="text-xs py-2.5 font-semibold text-foreground">
+                          {item.employeeName}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-muted-foreground">
+                          {item.designation}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono">
+                          {formatCurrency(item.basicSalary)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono">
+                          {formatCurrency(item.allowances)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono font-bold">
+                          {formatCurrency(item.grossSalary)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono text-muted-foreground">
+                          -{formatCurrency(item.pfDeduction)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono text-muted-foreground">
+                          -{formatCurrency(item.esicDeduction)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono text-muted-foreground">
+                          -{formatCurrency(item.ptDeduction)}
+                        </TableCell>
+                        <TableCell className="text-xs py-2.5 text-right font-mono font-extrabold text-primary">
+                          {formatCurrency(item.netSalary)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

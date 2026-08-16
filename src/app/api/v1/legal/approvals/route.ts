@@ -1,26 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { ensureLandParcelsTable } from "@/lib/legalDb";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { STAMP_DUTY_RATE, REGISTRATION_FEE_RATE, LAKH_IN_RUPEES } from "@/lib/governance";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
+    await ensureLandParcelsTable();
+
     const model = (prisma as any).landParcel;
     let records: any[] = [];
 
     if (model?.findMany) {
       records = await model.findMany({
-        where: { requiresHitl: true, acquisitionPhase: "FEASIBILITY" },
+        where: { tenantId, requiresHitl: true, acquisitionPhase: "FEASIBILITY" },
         orderBy: { createdAt: "desc" },
       });
     } else {
       try {
         const raw = await prisma.$queryRaw<any[]>`
           SELECT * FROM land_parcels
-          WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND requires_hitl = true AND acquisition_phase = 'FEASIBILITY'
+          WHERE tenant_id = ${tenantId}::uuid AND requires_hitl = true AND acquisition_phase = 'FEASIBILITY'
           ORDER BY created_at DESC
         `;
         records = raw || [];
@@ -35,9 +41,9 @@ export async function GET(request: NextRequest) {
       const plotSqft = plotAcres * 43560;
       const constructibleSqft = plotSqft * fsi;
       const baseVal = Number(r.baseLandValueAmount ?? r.base_land_value_amount ?? 0);
-      const stamp = baseVal * 0.07;
-      const reg = baseVal * 0.01;
-      const totalOutlay = baseVal + stamp + reg;
+      const stamp = Number(r.stampDutyAmount ?? r.stamp_duty_amount ?? (baseVal * STAMP_DUTY_RATE));
+      const reg = Number(r.registrationAmount ?? r.registration_amount ?? (baseVal * REGISTRATION_FEE_RATE));
+      const totalOutlay = Number(r.totalOutlayAmount ?? r.total_outlay_amount ?? (baseVal + stamp + reg));
 
       return {
         id: r.id,
@@ -51,10 +57,14 @@ export async function GET(request: NextRequest) {
         baseLandValueAmount: baseVal,
         stampDutyAmount: stamp,
         registrationAmount: reg,
-        totalOutlayLakhs: Number((totalOutlay / 100000).toFixed(2)),
+        totalOutlayLakhs: Number((totalOutlay / LAKH_IN_RUPEES).toFixed(2)),
         titleStatus: r.titleStatus || r.title_status || "Clear Title",
         acquisitionPhase: r.acquisitionPhase || r.acquisition_phase || "FEASIBILITY",
         requiresHitl: Boolean(r.requiresHitl ?? r.requires_hitl),
+        rejectionReason: r.rejectionReason || r.rejection_reason || null,
+        approvedBy: r.approvedBy || r.approved_by || null,
+        reviewedAt: r.reviewedAt || r.reviewed_at || null,
+        createdAt: r.createdAt || r.created_at || new Date().toISOString(),
       };
     });
 

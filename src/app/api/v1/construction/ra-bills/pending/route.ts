@@ -8,62 +8,42 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const billModel = (prisma as any).contractorRaBill;
-    let pendingBills: any[] = [];
+    const tenantId = auth.user.tenantId;
 
-    if (billModel?.findMany) {
-      pendingBills = await billModel.findMany({
-        where: { status: "PENDING_APPROVAL" },
-        include: { project: true },
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT b.*, p.project_name
-          FROM contractor_ra_bills b
-          LEFT JOIN master_project p ON b.project_id = p.id
-          WHERE b.tenant_id = ${ACTIVE_TENANT_ID}::uuid AND b.status = 'PENDING_APPROVAL'
-          ORDER BY b.created_at DESC
-        `;
-        pendingBills = raw.map((r: any) => ({
-          id: r.id,
-          billReference: r.bill_reference,
-          contractorName: r.contractor_name,
-          wbsPhase: r.wbs_phase,
-          grossClaimAmount: r.gross_claim_amount,
-          verifiedAmount: r.verified_amount,
-          retainedHoldbackAmount: r.retained_holdback_amount,
-          gstAmount: r.gst_amount,
-          netPayableAmount: r.net_payable_amount,
-          claimedProgressPct: r.claimed_progress_pct,
-          verifiedProgressPct: r.verified_progress_pct,
-          requiresHitl: r.requires_hitl,
-          status: r.status,
-          project: { projectName: r.project_name },
-          projectId: r.project_id,
-        }));
-      } catch {
-        pendingBills = [];
-      }
-    }
+    const pendingBills = await prisma.contractorRaBill.findMany({
+      where: {
+        tenantId,
+        status: "PENDING_APPROVAL",
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            projectName: true,
+            projectCode: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-    const mapped = (pendingBills || []).map((b: any) => ({
+    const mapped = pendingBills.map((b) => ({
       id: b.id,
-      billReference: b.billReference || b.bill_reference,
-      contractorName: b.contractorName || b.contractor_name,
-      wbsPhase: b.wbsPhase || b.wbs_phase,
-      grossClaimLakhs: Number((Number(b.grossClaimAmount ?? b.gross_claim_amount ?? 0) / 100000).toFixed(2)),
-      verifiedLakhs: Number((Number(b.verifiedAmount ?? b.verified_amount ?? 0) / 100000).toFixed(2)),
-      retainedHoldbackLakhs: Number((Number(b.retainedHoldbackAmount ?? b.retained_holdback_amount ?? 0) / 100000).toFixed(2)),
-      gstLakhs: Number((Number(b.gstAmount ?? b.gst_amount ?? 0) / 100000).toFixed(2)),
-      netPayableLakhs: Number((Number(b.netPayableAmount ?? b.net_payable_amount ?? 0) / 100000).toFixed(2)),
-      claimedProgressPct: Number(b.claimedProgressPct ?? b.claimed_progress_pct ?? 0),
-      verifiedProgressPct: Number(b.verifiedProgressPct ?? b.verified_progress_pct ?? 0),
-      requiresHitl: Boolean(b.requiresHitl ?? b.requires_hitl),
+      billReference: b.billReference,
+      contractorName: b.contractorName,
+      wbsPhase: b.wbsPhase,
+      grossClaimLakhs: Number((Number(b.grossClaimAmount) / 100000).toFixed(2)),
+      verifiedLakhs: Number((Number(b.verifiedAmount) / 100000).toFixed(2)),
+      retainedHoldbackLakhs: Number((Number(b.retainedHoldbackAmount) / 100000).toFixed(2)),
+      gstLakhs: Number((Number(b.gstAmount) / 100000).toFixed(2)),
+      netPayableLakhs: Number((Number(b.netPayableAmount) / 100000).toFixed(2)),
+      claimedProgressPct: Number(b.claimedProgressPct),
+      verifiedProgressPct: Number(b.verifiedProgressPct),
+      requiresHitl: b.requiresHitl,
       status: b.status,
-      projectName: b.project?.projectName || b.project_name || "",
-      projectId: b.projectId || b.project_id || "",
+      rejectionReason: b.rejectionReason,
+      projectName: b.project?.projectName || "",
+      projectId: b.projectId,
     }));
 
     return NextResponse.json({
@@ -90,4 +70,5 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 

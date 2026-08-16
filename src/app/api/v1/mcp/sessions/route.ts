@@ -1,29 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { ensureMcpSchema } from "@/lib/mcp/ensureMcpSchema";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = typeof auth === "object" && auth.user?.tenantId ? auth.user.tenantId : ACTIVE_TENANT_ID;
+
   try {
-    await runtimeDdl("table:mcp_agent_sessions", () => prisma.$executeRaw`
-      CREATE TABLE IF NOT EXISTS mcp_agent_sessions (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id UUID NOT NULL,
-        agent_title VARCHAR(255) NOT NULL,
-        assigned_scope VARCHAR(100) NOT NULL,
-        origin_ip VARCHAR(50) NOT NULL,
-        permission_level VARCHAR(50) NOT NULL DEFAULT 'READ_ONLY',
-        last_ping TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        session_status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
+    await ensureMcpSchema(tenantId);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM mcp_agent_sessions WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY last_ping DESC
+      SELECT id, agent_title, assigned_scope, origin_ip, permission_level, last_ping, session_status
+      FROM mcp_agent_sessions
+      WHERE tenant_id = ${tenantId}::uuid
+      ORDER BY last_ping DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -60,6 +54,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-

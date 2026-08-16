@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_INTEGRATION_SYNC_LIMIT } from "@/lib/governance";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
@@ -9,22 +8,25 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const tenantId = auth.user.tenantId;
+
     await runtimeDdl("table:integration_connectors", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS integration_connectors (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
-        connector_name VARCHAR(100) UNIQUE NOT NULL,
+        connector_name VARCHAR(100) NOT NULL,
         category VARCHAR(50) NOT NULL,
         status VARCHAR(50) NOT NULL DEFAULT 'CONNECTED',
         last_sync_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         synced_vouchers_24h INT NOT NULL DEFAULT 0,
         unreconciled_webhooks INT NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT integration_connectors_tenant_connector_uniq UNIQUE (tenant_id, connector_name)
       )
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM integration_connectors WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY connector_name ASC
+      SELECT * FROM integration_connectors WHERE tenant_id = ${tenantId}::uuid ORDER BY connector_name ASC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -68,19 +70,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const tenantId = ACTIVE_TENANT_ID;
+    const tenantId = auth.user.tenantId;
 
     await runtimeDdl("table:integration_connectors", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS integration_connectors (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id UUID NOT NULL,
-        connector_name VARCHAR(100) UNIQUE NOT NULL,
+        connector_name VARCHAR(100) NOT NULL,
         category VARCHAR(50) NOT NULL,
         status VARCHAR(50) NOT NULL DEFAULT 'CONNECTED',
         last_sync_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         synced_vouchers_24h INT NOT NULL DEFAULT 0,
         unreconciled_webhooks INT NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT integration_connectors_tenant_connector_uniq UNIQUE (tenant_id, connector_name)
       )
     `);
 
@@ -109,8 +112,18 @@ export async function POST(request: NextRequest) {
             tenant_id, connector_name, action_type, sync_amount, justification, status, requires_hitl
           ) VALUES (
             ${tenantId}::uuid, ${connectorName || "Tally Prime Local Bridge"}, 'LEDGER_SYNC',
-            ${syncAmt}, 'Manual ERP ledger synchronization exceeds ₹10 Lakhs threshold requirement',
+            ${syncAmt}, 'Manual ERP ledger synchronization exceeds ₹10 Lakhs governance threshold',
             'PENDING_APPROVAL', true
+          )
+        `;
+
+        // Log the HITL escalation to audit log
+        await prisma.$executeRaw`
+          INSERT INTO integration_logs (
+            tenant_id, provider_name, endpoint, payload_type, response_status, latency_ms
+          ) VALUES (
+            ${tenantId}::uuid, ${connectorName || "Tally Prime Local Bridge"}, '/sync/manual-trigger',
+            'Ledger Batch Sync', 'HITL_INTERCEPTED', 145
           )
         `;
 
@@ -119,7 +132,7 @@ export async function POST(request: NextRequest) {
           status_code: 200,
           timestamp: new Date().toISOString(),
           request_id: `req-${Date.now()}`,
-          data: { success: true, requiresHitl: true },
+          data: { success: true, requiresHitl: true, connectorName, amount: syncAmt },
           error: null,
           meta: null,
         });
@@ -129,7 +142,17 @@ export async function POST(request: NextRequest) {
         UPDATE integration_connectors
         SET last_sync_time = NOW(),
             synced_vouchers_24h = synced_vouchers_24h + 1
-        WHERE connector_name = ${connectorName}
+        WHERE tenant_id = ${tenantId}::uuid AND connector_name = ${connectorName}
+      `;
+
+      // Log the successful sync to audit log
+      await prisma.$executeRaw`
+        INSERT INTO integration_logs (
+          tenant_id, provider_name, endpoint, payload_type, response_status, latency_ms
+        ) VALUES (
+          ${tenantId}::uuid, ${connectorName || "Tally Prime Local Bridge"}, '/sync/manual-trigger',
+          'Ledger Batch Sync', 'SUCCESS', 180
+        )
       `;
 
       return NextResponse.json({
@@ -137,7 +160,7 @@ export async function POST(request: NextRequest) {
         status_code: 200,
         timestamp: new Date().toISOString(),
         request_id: `req-${Date.now()}`,
-        data: { success: true, requiresHitl: false },
+        data: { success: true, requiresHitl: false, connectorName, amount: syncAmt },
         error: null,
         meta: null,
       });
@@ -145,13 +168,25 @@ export async function POST(request: NextRequest) {
 
     const { connectorName, category, status } = body;
 
+    if (!connectorName) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "MISSING_CONNECTOR_NAME", message: "Connector name is required" },
+        meta: null,
+      }, { status: 400 });
+    }
+
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO integration_connectors (
         tenant_id, connector_name, category, status, last_sync_time
       ) VALUES (
         ${tenantId}::uuid, ${connectorName}, ${category || "ERP Sync"}, ${status || "CONNECTED"}, NOW()
       )
-      ON CONFLICT (connector_name) DO UPDATE SET
+      ON CONFLICT (tenant_id, connector_name) DO UPDATE SET
         category = ${category || "ERP Sync"},
         status = ${status || "CONNECTED"},
         last_sync_time = NOW()
@@ -159,6 +194,16 @@ export async function POST(request: NextRequest) {
     `;
 
     const updated = inserted[0];
+
+    // Record audit log for configuration update
+    await prisma.$executeRaw`
+      INSERT INTO integration_logs (
+        tenant_id, provider_name, endpoint, payload_type, response_status, latency_ms
+      ) VALUES (
+        ${tenantId}::uuid, ${connectorName}, '/config/update',
+        'Connector Credential Sync', 'SUCCESS', 95
+      )
+    `;
 
     return NextResponse.json({
       success: true,
@@ -192,7 +237,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-
-

@@ -17,8 +17,8 @@ export function JointVenturesView() {
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  const [landownerName, setLandownerName] = useState<string>("Kulkarni Family Trust");
-  const [projectSite, setProjectSite] = useState<string>("Avenue Horizon - Gangapur Road");
+  const [landownerName, setLandownerName] = useState<string>("");
+  const [projectSite, setProjectSite] = useState<string>("");
   const [developerSharePct, setDeveloperSharePct] = useState<number | "">(65);
   const [landownerSharePct, setLandownerSharePct] = useState<number | "">(35);
 
@@ -42,19 +42,43 @@ export function JointVenturesView() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (isModalOpen) {
+      setLandownerName("");
+      setProjectSite("");
+      setDeveloperSharePct(65);
+      setLandownerSharePct(35);
+      setModalError(null);
+    }
+  }, [isModalOpen]);
+
   const handleDraftJda = async () => {
     try {
       setIsSubmitting(true);
       setModalError(null);
 
-      if (!landownerName) throw new Error("Landowner name is required.");
-      if (!projectSite) throw new Error("Project site is required.");
+      const owner = landownerName.trim();
+      const site = projectSite.trim();
+
+      if (!owner) throw new Error("Landowner entity or full name is required.");
+      if (!site) throw new Error("Project development site is required.");
+
+      const devShare = typeof developerSharePct === "number" ? developerSharePct : 65;
+      const landShare = typeof landownerSharePct === "number" ? landownerSharePct : 35;
+
+      if (devShare < 0 || devShare > 100 || landShare < 0 || landShare > 100) {
+        throw new Error("Share percentages must be between 0% and 100%.");
+      }
+
+      if (Math.abs(devShare + landShare - 100) > 0.01) {
+        throw new Error(`Developer share (${devShare}%) and Landowner share (${landShare}%) must equal exactly 100%.`);
+      }
 
       const payload: DraftJdaPayload = {
-        landownerName,
-        projectSite,
-        developerSharePct: typeof developerSharePct === "number" ? developerSharePct : 65,
-        landownerSharePct: typeof landownerSharePct === "number" ? landownerSharePct : 35,
+        landownerName: owner,
+        projectSite: site,
+        developerSharePct: devShare,
+        landownerSharePct: landShare,
       };
 
       await legalApi.draftJda(payload);
@@ -203,9 +227,14 @@ export function JointVenturesView() {
                   max="100"
                   value={developerSharePct}
                   onChange={(e) => {
-                    const val = e.target.value ? parseFloat(e.target.value) : "";
-                    setDeveloperSharePct(val);
-                    if (typeof val === "number") setLandownerSharePct(100 - val);
+                    const raw = e.target.value ? parseFloat(e.target.value) : "";
+                    if (typeof raw === "number") {
+                      const clamped = Math.max(0, Math.min(100, raw));
+                      setDeveloperSharePct(clamped);
+                      setLandownerSharePct(100 - clamped);
+                    } else {
+                      setDeveloperSharePct("");
+                    }
                   }}
                   className="h-8 text-xs font-mono font-bold"
                 />
@@ -219,9 +248,14 @@ export function JointVenturesView() {
                   max="100"
                   value={landownerSharePct}
                   onChange={(e) => {
-                    const val = e.target.value ? parseFloat(e.target.value) : "";
-                    setLandownerSharePct(val);
-                    if (typeof val === "number") setDeveloperSharePct(100 - val);
+                    const raw = e.target.value ? parseFloat(e.target.value) : "";
+                    if (typeof raw === "number") {
+                      const clamped = Math.max(0, Math.min(100, raw));
+                      setLandownerSharePct(clamped);
+                      setDeveloperSharePct(100 - clamped);
+                    } else {
+                      setLandownerSharePct("");
+                    }
                   }}
                   className="h-8 text-xs font-mono font-bold"
                 />

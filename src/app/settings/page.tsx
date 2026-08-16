@@ -54,64 +54,49 @@ export default function SettingsPage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="tenant"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="tenant" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Building2 className="h-3.5 w-3.5" />
             Organization Profile
           </TabsTrigger>
 
-          <TabsTrigger
-            value="users"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="users" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Users className="h-3.5 w-3.5" />
             User & RBAC Management
           </TabsTrigger>
 
-          <TabsTrigger
-            value="audit"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="audit" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <FileText className="h-3.5 w-3.5" />
             Audit Trail Logs
           </TabsTrigger>
 
-          <TabsTrigger
-            value="security"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="security" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Lock className="h-3.5 w-3.5" />
             Security Policies
           </TabsTrigger>
-          <TabsTrigger
-            value="reference"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="reference" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <ListChecks className="h-3.5 w-3.5" />
             Reference Lists
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="tenant" className="outline-none space-y-4 pt-2">
+        <TabsContent value="tenant" className="outline-none space-y-4">
           <TenantSettingsView />
         </TabsContent>
 
-        <TabsContent value="users" className="outline-none space-y-4 pt-2">
+        <TabsContent value="users" className="outline-none space-y-4">
           <UserManagementView />
         </TabsContent>
 
-        <TabsContent value="audit" className="outline-none space-y-4 pt-2">
+        <TabsContent value="audit" className="outline-none space-y-4">
           <AuditLogsView />
         </TabsContent>
 
-        <TabsContent value="security" className="outline-none space-y-4 pt-2">
+        <TabsContent value="security" className="outline-none space-y-4">
           <SecurityPolicyView />
         </TabsContent>
 
-        <TabsContent value="reference" className="outline-none space-y-4 pt-2">
+        <TabsContent value="reference" className="outline-none space-y-4">
           <ReferenceListsView />
         </TabsContent>
       </Tabs>

@@ -1,117 +1,149 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { ensureMcpSchema } from "@/lib/mcp/ensureMcpSchema";
+import { executeMcpTool } from "@/lib/mcp/toolExecutor";
 
 export async function POST(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = typeof auth === "object" && auth.user?.tenantId ? auth.user.tenantId : ACTIVE_TENANT_ID;
+  const operatorName = typeof auth === "object" && auth.user?.fullName ? auth.user.fullName : "Autonomous Agent";
+  const clientIp = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "127.0.0.1";
+
   try {
+    await ensureMcpSchema(tenantId);
+
     const body = await request.json();
     const { jsonrpc, method, params, id } = body;
 
     if (jsonrpc !== "2.0") {
       return NextResponse.json({
         jsonrpc: "2.0",
-        error: { code: -32600, message: "Invalid Request: Expected JSON-RPC 2.0" },
+        error: { code: -32600, message: "Invalid Request: Expected JSON-RPC 2.0 protocol" },
         id: id || null,
       });
     }
 
     if (method === "initialize") {
+      const agentTitle = params?.clientInfo?.name || operatorName || "External MCP Agent Client";
+
+      // Upsert active agent session in DB safely
+      const existingSession = await prisma.$queryRaw<any[]>`
+        SELECT id FROM mcp_agent_sessions WHERE tenant_id = ${tenantId}::uuid AND agent_title = ${agentTitle} LIMIT 1
+      `;
+
+      if (existingSession.length === 0) {
+        await prisma.$executeRaw`
+          INSERT INTO mcp_agent_sessions (
+            tenant_id, agent_title, assigned_scope, origin_ip, permission_level, last_ping, session_status
+          ) VALUES (
+            ${tenantId}::uuid, ${agentTitle}, 'ENTERPRISE_CORE_MODULES', ${clientIp}, 'MUTATIVE_HITL', NOW(), 'ACTIVE'
+          )
+        `;
+      } else {
+        await prisma.$executeRaw`
+          UPDATE mcp_agent_sessions
+          SET last_ping = NOW(), session_status = 'ACTIVE', origin_ip = ${clientIp}
+          WHERE tenant_id = ${tenantId}::uuid AND agent_title = ${agentTitle}
+        `;
+      }
+
       return NextResponse.json({
         jsonrpc: "2.0",
         result: {
           protocolVersion: "2024-11-05",
-          capabilities: { tools: { listChanged: true }, resources: { subscribe: true } },
-          serverInfo: { name: "Avenue-Builders-MCP-Gateway", version: "1.0.0" },
+          capabilities: {
+            tools: { listChanged: true },
+            resources: { subscribe: true },
+          },
+          serverInfo: {
+            name: "Avenue-Enterprise-MCP-Gateway",
+            version: "1.0.0",
+          },
         },
         id,
       });
     }
 
     if (method === "tools/list") {
-      await runtimeDdl("table:mcp_registered_tools", () => prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS mcp_registered_tools (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          tenant_id UUID NOT NULL,
-          tool_name VARCHAR(100) UNIQUE NOT NULL,
-          target_module VARCHAR(100) NOT NULL,
-          description TEXT NOT NULL,
-          is_mutative BOOLEAN NOT NULL DEFAULT false,
-          requires_hitl BOOLEAN NOT NULL DEFAULT false,
-          execution_count INT NOT NULL DEFAULT 0,
-          schema_input TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `);
-
-      const raw = await prisma.$queryRaw<any[]>`
-        SELECT * FROM mcp_registered_tools WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY tool_name ASC
+      const tools = await prisma.$queryRaw<any[]>`
+        SELECT tool_name, description, schema_input
+        FROM mcp_registered_tools
+        WHERE tenant_id = ${tenantId}::uuid
+        ORDER BY tool_name ASC
       `;
-
-      const tools = (raw || []).map((t: any) => ({
-        name: t.tool_name,
-        description: t.description,
-        inputSchema: JSON.parse(t.schema_input || "{}"),
-      }));
 
       return NextResponse.json({
         jsonrpc: "2.0",
-        result: { tools },
+        result: {
+          tools: (tools || []).map((t) => ({
+            name: t.tool_name,
+            description: t.description,
+            inputSchema: JSON.parse(t.schema_input || "{}"),
+          })),
+        },
         id,
       });
     }
 
     if (method === "tools/call") {
       const { name, arguments: args } = params || {};
-      const tenantId = ACTIVE_TENANT_ID;
+      const startTime = Date.now();
 
-      await runtimeDdl("table:mcp_registered_tools", () => prisma.$executeRaw`
-        CREATE TABLE IF NOT EXISTS mcp_registered_tools (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          tenant_id UUID NOT NULL,
-          tool_name VARCHAR(100) UNIQUE NOT NULL,
-          target_module VARCHAR(100) NOT NULL,
-          description TEXT NOT NULL,
-          is_mutative BOOLEAN NOT NULL DEFAULT false,
-          requires_hitl BOOLEAN NOT NULL DEFAULT false,
-          execution_count INT NOT NULL DEFAULT 0,
-          schema_input TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `);
+      if (!name) {
+        return NextResponse.json({
+          jsonrpc: "2.0",
+          error: { code: -32602, message: "Invalid params: 'name' of tool is required" },
+          id,
+        });
+      }
 
-      const toolRecord = await prisma.$queryRaw<any[]>`
-        SELECT * FROM mcp_registered_tools WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND tool_name = ${name} LIMIT 1
+      // Check tool definition in DB
+      const toolRecords = await prisma.$queryRaw<any[]>`
+        SELECT tool_name, target_module, is_mutative, requires_hitl
+        FROM mcp_registered_tools
+        WHERE tenant_id = ${tenantId}::uuid AND tool_name = ${name}
+        LIMIT 1
       `;
 
-      const isMutativeTool = Boolean(args?.requires_hitl || name?.includes("issue_purchase_order") || name?.includes("disburse") || name?.includes("execute") || (toolRecord && toolRecord.length > 0 && toolRecord[0]?.requires_hitl));
+      const toolDef = toolRecords[0];
+      const isHighRisk = Boolean(
+        toolDef?.requires_hitl ||
+        args?.requires_hitl ||
+        name.includes("sales_booking") ||
+        (name.includes("procurement_po") && Number(args?.total_amount || 0) > 100000) ||
+        (name.includes("tally_post_voucher") && Number(args?.totalAmount || 0) > 1000000) ||
+        name.includes("payroll_process")
+      );
 
-      if (isMutativeTool) {
-        await runtimeDdl("table:mcp_approvals", () => prisma.$executeRaw`
-          CREATE TABLE IF NOT EXISTS mcp_approvals (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL,
-            agent_title VARCHAR(255) NOT NULL,
-            invoked_tool VARCHAR(100) NOT NULL,
-            target_module VARCHAR(100) NOT NULL,
-            parameters_summary TEXT NOT NULL,
-            justification TEXT NOT NULL,
-            status VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
-            requires_hitl BOOLEAN NOT NULL DEFAULT true,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `);
+      // If high-risk and not explicitly pre-approved by a human director, pause and escrow in mcp_approvals
+      if (isHighRisk) {
+        const targetModule = toolDef?.target_module || "FINANCE";
+        const paramStr = JSON.stringify(args || {});
 
-        await prisma.$executeRaw`
+        const approvalRows = await prisma.$queryRaw<any[]>`
           INSERT INTO mcp_approvals (
             tenant_id, agent_title, invoked_tool, target_module, parameters_summary, justification, status, requires_hitl
           ) VALUES (
-            ${tenantId}::uuid, 'Autonomous Agent', ${name}, ${toolRecord && toolRecord.length > 0 ? toolRecord[0].target_module : 'PROCUREMENT'},
-            ${JSON.stringify(args || {})}, 'Mutative high-risk tool call intercepted by Governance Policy',
+            ${tenantId}::uuid, ${operatorName}, ${name}, ${targetModule},
+            ${paramStr}, 'High-risk mutative tool call intercepted by Avenue Governance Policy',
             'PENDING_APPROVAL', true
+          )
+          RETURNING id
+        `;
+
+        const approvalId = approvalRows[0]?.id;
+        const latency = Date.now() - startTime;
+
+        // Log interception
+        await prisma.$executeRaw`
+          INSERT INTO mcp_execution_logs (
+            tenant_id, agent_title, invoked_tool, parameters_summary, latency_ms, status
+          ) VALUES (
+            ${tenantId}::uuid, ${operatorName}, ${name}, ${paramStr}, ${latency}, 'HITL_INTERCEPTED'
           )
         `;
 
@@ -119,7 +151,32 @@ export async function POST(request: NextRequest) {
           jsonrpc: "2.0",
           error: {
             code: 403,
-            message: "HITL_APPROVAL_REQUIRED: High-risk mutative execution paused for Governance Director authorization.",
+            message: `HITL_APPROVAL_REQUIRED: High-risk mutative execution paused for Governance Director authorization. Escrow Reference: ${approvalId}`,
+          },
+          id,
+        });
+      }
+
+      // Execute autonomous tool directly against database
+      const executionResult = await executeMcpTool(name, args, tenantId, "ai-mcp-autonomous-agent");
+      const latency = Date.now() - startTime;
+
+      // Log execution to DB
+      await prisma.$executeRaw`
+        INSERT INTO mcp_execution_logs (
+          tenant_id, agent_title, invoked_tool, parameters_summary, latency_ms, status
+        ) VALUES (
+          ${tenantId}::uuid, ${operatorName}, ${name}, ${JSON.stringify(args || {})},
+          ${latency}, ${executionResult.success ? 'SUCCESS' : 'FAILED'}
+        )
+      `;
+
+      if (!executionResult.success) {
+        return NextResponse.json({
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: executionResult.error || "Tool execution failed",
           },
           id,
         });
@@ -131,7 +188,7 @@ export async function POST(request: NextRequest) {
           content: [
             {
               type: "text",
-              text: JSON.stringify({ status: "EXECUTED", tool: name, result: "Query completed successfully" }),
+              text: JSON.stringify(executionResult.data),
             },
           ],
         },
@@ -141,17 +198,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       jsonrpc: "2.0",
-      error: { code: -32601, message: `Method not found: ${method}` },
+      error: { code: -32601, message: `Method '${method}' not found` },
       id,
     });
   } catch (err: unknown) {
     return NextResponse.json({
       jsonrpc: "2.0",
-      error: { code: -32603, message: safeErrorMessage(err, "Internal JSON-RPC error") },
+      error: { code: -32603, message: safeErrorMessage(err, "Internal JSON-RPC Error") },
       id: null,
     });
   }
 }
-
-
-

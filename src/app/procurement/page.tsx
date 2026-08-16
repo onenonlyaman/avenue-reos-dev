@@ -17,6 +17,7 @@ export default function ProcurementPage() {
   const [activeTab, setActiveTab] = useState<string>("orders");
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
   const [isApprovalDrawerOpen, setIsApprovalDrawerOpen] = useState<boolean>(false);
+  const [refreshKey, setRefreshKey] = useState<number>(0);
 
   const loadPendingApprovals = async () => {
     try {
@@ -27,9 +28,14 @@ export default function ProcurementPage() {
     }
   };
 
+  const handleRefreshAll = () => {
+    setRefreshKey((k) => k + 1);
+    loadPendingApprovals();
+  };
+
   useEffect(() => {
     loadPendingApprovals();
-  }, []);
+  }, [refreshKey]);
 
   return (
     <div className="space-y-6 pb-8">
@@ -45,7 +51,7 @@ export default function ProcurementPage() {
           >
             <ShieldAlert className="h-3.5 w-3.5 text-amber-700" />
             Director Approval Queue
-            <Badge variant="secondary" className="bg-amber-200 text-amber-950 text-[9px] px-1 py-0 ml-0.5 font-bold">
+            <Badge variant="secondary" className="bg-amber-200 text-amber-950 text-[9px] px-1.5 py-0 ml-0.5 font-bold">
               {pendingApprovalsCount}
             </Badge>
           </Button>
@@ -53,63 +59,50 @@ export default function ProcurementPage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="orders"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="orders" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <ShoppingCart className="h-3.5 w-3.5" />
             Requisitions & Orders
           </TabsTrigger>
 
-          <TabsTrigger
-            value="grn"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="grn" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <FileCheck2 className="h-3.5 w-3.5" />
             Goods Receipt Notes
           </TabsTrigger>
 
-          <TabsTrigger
-            value="inventory"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="inventory" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Warehouse className="h-3.5 w-3.5" />
             Stock & Warehouses
           </TabsTrigger>
 
-          <TabsTrigger
-            value="vendors"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="vendors" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Building2 className="h-3.5 w-3.5" />
             Vendor Directory
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="orders" className="outline-none space-y-4 pt-2">
-          <PurchaseOrdersView />
+        <TabsContent value="orders" className="outline-none space-y-4">
+          <PurchaseOrdersView refreshKey={refreshKey} onRefreshNeeded={handleRefreshAll} />
         </TabsContent>
 
-        <TabsContent value="grn" className="outline-none space-y-4 pt-2">
-          <GoodsReceiptView />
+        <TabsContent value="grn" className="outline-none space-y-4">
+          <GoodsReceiptView refreshKey={refreshKey} onRefreshNeeded={handleRefreshAll} />
         </TabsContent>
 
-        <TabsContent value="inventory" className="outline-none space-y-4 pt-2">
-          <InventoryWarehouseView />
+        <TabsContent value="inventory" className="outline-none space-y-4">
+          <InventoryWarehouseView refreshKey={refreshKey} onRefreshNeeded={handleRefreshAll} />
         </TabsContent>
 
-        <TabsContent value="vendors" className="outline-none space-y-4 pt-2">
-          <VendorDirectoryView />
+        <TabsContent value="vendors" className="outline-none space-y-4">
+          <VendorDirectoryView refreshKey={refreshKey} onRefreshNeeded={handleRefreshAll} />
         </TabsContent>
       </Tabs>
 
       <ProcurementApprovalDrawer
         isOpen={isApprovalDrawerOpen}
         onClose={() => setIsApprovalDrawerOpen(false)}
-        onOrderProcessed={loadPendingApprovals}
+        onOrderProcessed={handleRefreshAll}
       />
     </div>
   );
 }
-

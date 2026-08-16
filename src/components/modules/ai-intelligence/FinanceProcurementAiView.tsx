@@ -3,14 +3,61 @@
 import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { TrendingUp, ShoppingBag, DollarSign, AlertCircle, Loader2 } from "lucide-react";
+import { RecordFormModal, RecordField } from "@/components/core/RecordFormModal";
+import { ShoppingBag, RefreshCw, AlertCircle, Loader2, Plus } from "lucide-react";
 import { aiIntelligenceApi, FinanceProcurementInsight } from "@/services/aiIntelligenceApi";
+
+const FINANCE_PROCUREMENT_FIELDS: RecordField[] = [
+  {
+    name: "itemName",
+    label: "Material / Requisition Item Description",
+    type: "text",
+    required: true,
+    placeholder: "e.g. Fe-550D TMT Reinforcement Steel 16mm",
+  },
+  {
+    name: "suggestedVendorName",
+    label: "AI / Preferred Vendor Name",
+    type: "text",
+    required: true,
+    placeholder: "e.g. Jindal Steel & Power Ltd",
+  },
+  {
+    name: "historicalQuoteAmount",
+    label: "Historical / Market Quote Amount (₹)",
+    type: "number",
+    required: true,
+    placeholder: "e.g. 5200000",
+    halfWidth: true,
+  },
+  {
+    name: "recommendedAllocationAmount",
+    label: "Recommended Optimized Allocation (₹)",
+    type: "number",
+    required: true,
+    placeholder: "e.g. 4850000",
+    halfWidth: true,
+  },
+  {
+    name: "cashBurnTrajectory",
+    label: "Cash Burn Trajectory",
+    type: "select",
+    required: true,
+    options: [
+      { value: "OPTIMIZED", label: "OPTIMIZED" },
+      { value: "STABLE", label: "STABLE" },
+      { value: "HIGH_BURN", label: "HIGH BURN" },
+    ],
+  },
+];
 
 export function FinanceProcurementAiView() {
   const [insights, setInsights] = useState<FinanceProcurementInsight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const loadData = async () => {
     try {
@@ -60,6 +107,30 @@ export function FinanceProcurementAiView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Automated Procurement Matcher & Cash Burn Trajectory Forecaster
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Predictive supplier rate benchmarks, bill-of-materials optimization, and liquidity burn forecast.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            size="sm"
+            className="gap-1.5 text-xs font-semibold"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Log Procurement Anomaly
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs font-semibold"
+            onClick={loadData}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh Recommendations
+          </Button>
         </div>
       </div>
 
@@ -67,8 +138,8 @@ export function FinanceProcurementAiView() {
         <CorporateEmptyState
           title="No Financial or Procurement Recommendations"
           description="Material allocation matcher has no pending optimization suggestions. Open purchase requisitions will automatically trigger allocation recommendations."
-          actionLabel="Refresh Recommendations"
-          onAction={loadData}
+          actionLabel="Log Procurement Anomaly"
+          onAction={() => setIsCreateModalOpen(true)}
           icon={ShoppingBag}
         />
       ) : (
@@ -123,6 +194,17 @@ export function FinanceProcurementAiView() {
           </Table>
         </div>
       )}
+
+      <RecordFormModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSaved={loadData}
+        title="Log Material Procurement Anomaly / Benchmark"
+        endpoint="/api/v1/ai-intelligence/finance-procurement"
+        fields={FINANCE_PROCUREMENT_FIELDS}
+        submitLabel="Record Benchmark Anomaly"
+        contextNote="Stores vendor optimization pricing into the organizational intelligence model."
+      />
     </div>
   );
 }

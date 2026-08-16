@@ -9,8 +9,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const budgets = await prisma.budgetHead.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
-    const bookings = await prisma.salesBooking.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
+    const bookings = await prisma.salesBooking.findMany({
+      where: { tenantId: ACTIVE_TENANT_ID },
+      include: { unit: { select: { projectId: true } } },
+    });
     const ledgerEntries = await prisma.generalLedgerEntry.findMany({ where: { tenantId: ACTIVE_TENANT_ID } });
+    const projects = await prisma.masterProject.findMany({ where: { tenantId: ACTIVE_TENANT_ID }, orderBy: { projectName: "asc" } });
 
     let totalAllocated = 0;
     let totalCommitted = 0;
@@ -34,11 +38,27 @@ export async function GET(request: NextRequest) {
       totalCredit += Number(g.creditAmount);
     });
 
-    const cashInEscrowCr = Number(((totalBookingReceivable * 0.4) / 10000000).toFixed(2));
+    // 70% statutory RERA customer collections mandatory deposit
+    const cashInEscrowCr = Number(((totalBookingReceivable * 0.70) / 10000000).toFixed(2));
     const operationalCashCr = Number((totalCredit / 10000000).toFixed(2));
-    const accountsReceivableCr = Number(((totalBookingReceivable * 0.6) / 10000000).toFixed(2));
+    const accountsReceivableCr = Number(((totalBookingReceivable * 0.30) / 10000000).toFixed(2));
     const accountsPayableCr = Number((totalCommitted / 10000000).toFixed(2));
     const ytdProfitMarginPct = totalAllocated > 0 ? Number((((totalAllocated - totalSpent) / totalAllocated) * 100).toFixed(1)) : 0;
+
+    const projectEscrows = projects.map((p) => {
+      const projBookings = bookings.filter((b) => b.unit?.projectId === p.id);
+      const projBookingTotal = projBookings.reduce((sum, b) => sum + Number(b.agreedTotalPrice), 0);
+      const escrowCr = projBookingTotal > 0
+        ? Number(((projBookingTotal * 0.70) / 10000000).toFixed(2))
+        : Number(((Number(p.totalBudget) * 0.20) / 10000000).toFixed(2));
+
+      return {
+        id: p.id,
+        projectName: p.projectName,
+        location: p.location,
+        escrowCr,
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -54,6 +74,7 @@ export async function GET(request: NextRequest) {
         quarterlyBudgetAllocatedCr: Number((totalAllocated / 10000000).toFixed(2)),
         quarterlyBudgetCommittedCr: accountsPayableCr,
         quarterlyBudgetDisbursedCr: Number((totalSpent / 10000000).toFixed(2)),
+        projectEscrows,
       },
       error: null,
       meta: null,
@@ -64,16 +85,7 @@ export async function GET(request: NextRequest) {
       status_code: 500,
       timestamp: new Date().toISOString(),
       request_id: `req-${Date.now()}`,
-      data: {
-        cashInEscrowCr: 0,
-        operationalCashCr: 0,
-        accountsReceivableCr: 0,
-        accountsPayableCr: 0,
-        ytdProfitMarginPct: 0,
-        quarterlyBudgetAllocatedCr: 0,
-        quarterlyBudgetCommittedCr: 0,
-        quarterlyBudgetDisbursedCr: 0,
-      },
+      data: null,
       error: {
         code: "FINANCE_OVERVIEW_ERROR",
         message: safeErrorMessage(err, "Financial overview could not be loaded"),

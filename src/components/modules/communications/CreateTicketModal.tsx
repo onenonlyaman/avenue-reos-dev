@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -22,6 +21,22 @@ import {
 import { Loader2 } from "lucide-react";
 import { communicationsApi, SupportTicket } from "@/services/communicationsApi";
 import { useCatalogOptions } from "@/hooks/useCatalogOptions";
+
+const DEFAULT_CATEGORIES = [
+  "General Inquiry",
+  "Possession Handover",
+  "Billing Dispute",
+  "Construction Quality",
+  "Legal Notice",
+];
+
+const DEFAULT_DEPARTMENTS = [
+  "Customer Care",
+  "Site Operations",
+  "Finance & Billing",
+  "Legal & Compliance",
+  "Quality Assurance",
+];
 
 interface CreateTicketModalProps {
   isOpen: boolean;
@@ -34,12 +49,27 @@ export function CreateTicketModal({ isOpen, onClose, onSuccess }: CreateTicketMo
   const { values: ticketCategories } = useCatalogOptions("TICKET_CATEGORY");
   const { values: departments } = useCatalogOptions("DEPARTMENT");
   const [subject, setSubject] = useState("");
-  const [category, setCategory] = useState<any>("General Inquiry");
+  const [category, setCategory] = useState("General Inquiry");
   const [assignedDepartment, setAssignedDepartment] = useState("Customer Care");
   const [priority, setPriority] = useState<"CRITICAL" | "HIGH" | "STANDARD">("STANDARD");
   const [claimAmount, setClaimAmount] = useState<string>("0");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const categories = ticketCategories.length > 0 ? ticketCategories : DEFAULT_CATEGORIES;
+  const depts = departments.length > 0 ? departments : DEFAULT_DEPARTMENTS;
+
+  useEffect(() => {
+    if (categories.length > 0 && !categories.includes(category)) {
+      setCategory(categories[0]);
+    }
+  }, [categories]);
+
+  useEffect(() => {
+    if (depts.length > 0 && !depts.includes(assignedDepartment)) {
+      setAssignedDepartment(depts[0]);
+    }
+  }, [depts]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,13 +84,16 @@ export function CreateTicketModal({ isOpen, onClose, onSuccess }: CreateTicketMo
       const created = await communicationsApi.createTicket({
         customerName,
         subject,
-        category,
+        category: category as any,
         assignedDepartment,
         priority,
         claimAmount: Number(claimAmount || 0),
       });
       onSuccess(created);
       onClose();
+      setCustomerName("");
+      setSubject("");
+      setClaimAmount("0");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Support ticket could not be completed");
     } finally {
@@ -109,19 +142,16 @@ export function CreateTicketModal({ isOpen, onClose, onSuccess }: CreateTicketMo
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">Category</Label>
-              <Select value={category} onValueChange={(val) => val && setCategory(val as any)}>
+              <Select value={category} onValueChange={(val) => val && setCategory(val)}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ticketCategories.map((option) => (
+                  {categories.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}
                     </SelectItem>
                   ))}
-                  {ticketCategories.length === 0 && (
-                    <div className="px-2 py-3 text-[11px] text-muted-foreground">No entries configured.</div>
-                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -133,14 +163,11 @@ export function CreateTicketModal({ isOpen, onClose, onSuccess }: CreateTicketMo
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {departments.map((option) => (
+                  {depts.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}
                     </SelectItem>
                   ))}
-                  {departments.length === 0 && (
-                    <div className="px-2 py-3 text-[11px] text-muted-foreground">No entries configured.</div>
-                  )}
                 </SelectContent>
               </Select>
             </div>

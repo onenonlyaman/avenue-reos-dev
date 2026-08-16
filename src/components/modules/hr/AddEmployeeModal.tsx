@@ -11,13 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { hrApi, Employee } from "@/services/hrApi";
 import { CatalogSelect } from "@/components/core/CatalogSelect";
@@ -32,10 +25,13 @@ export function AddEmployeeModal({ isOpen, onClose, onSuccess }: AddEmployeeModa
   const [fullName, setFullName] = useState("");
   const [designation, setDesignation] = useState("");
   const [department, setDepartment] = useState("Site Construction Operations");
-  const [siteLocation, setSiteLocation] = useState("Gangapur Road Site");
+  const [siteLocation, setSiteLocation] = useState("Nashik Corporate Headquarters");
   const [workforceType, setWorkforceType] = useState<"Permanent" | "Contract" | "Daily Wage">("Permanent");
   const [corporateEmail, setCorporateEmail] = useState("");
   const [contactNumber, setContactNumber] = useState("");
+  const [basicSalary, setBasicSalary] = useState("45000");
+  const [allowances, setAllowances] = useState("15000");
+  const [joiningDate, setJoiningDate] = useState(new Date().toISOString().split("T")[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,9 +53,17 @@ export function AddEmployeeModal({ isOpen, onClose, onSuccess }: AddEmployeeModa
         workforceType,
         corporateEmail,
         contactNumber,
+        basicSalary: Number(basicSalary) || 45000,
+        allowances: Number(allowances) || 15000,
+        joiningDate,
       });
       onSuccess(created);
       onClose();
+      // Reset form
+      setFullName("");
+      setDesignation("");
+      setCorporateEmail("");
+      setContactNumber("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Employee record could not be saved");
     } finally {
@@ -69,7 +73,7 @@ export function AddEmployeeModal({ isOpen, onClose, onSuccess }: AddEmployeeModa
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-[500px] border-border bg-card">
+      <DialogContent className="sm:max-w-[540px] border-border bg-card">
         <DialogHeader>
           <DialogTitle className="text-base font-bold text-foreground">
             Add Workforce Record
@@ -144,6 +148,32 @@ export function AddEmployeeModal({ isOpen, onClose, onSuccess }: AddEmployeeModa
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Basic Monthly Salary (₹)</Label>
+              <Input
+                type="number"
+                value={basicSalary}
+                onChange={(e) => setBasicSalary(e.target.value)}
+                placeholder="45000"
+                className="h-8 text-xs font-mono"
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Allowances & Perks (₹)</Label>
+              <Input
+                type="number"
+                value={allowances}
+                onChange={(e) => setAllowances(e.target.value)}
+                placeholder="15000"
+                className="h-8 text-xs font-mono"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
               <Label className="text-xs font-semibold">Corporate Email</Label>
               <Input
                 type="email"
@@ -163,6 +193,16 @@ export function AddEmployeeModal({ isOpen, onClose, onSuccess }: AddEmployeeModa
                 className="h-8 text-xs"
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold">Joining Date</Label>
+            <Input
+              type="date"
+              value={joiningDate}
+              onChange={(e) => setJoiningDate(e.target.value)}
+              className="h-8 text-xs font-mono"
+            />
           </div>
 
           <DialogFooter className="pt-2">

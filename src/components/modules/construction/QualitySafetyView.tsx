@@ -96,7 +96,7 @@ export function QualitySafetyView({
           icon={ShieldCheck}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -159,19 +159,27 @@ export function QualitySafetyView({
         endpoint="/api/v1/construction/inspections"
         submitLabel="Log Inspection"
         fields={[
-          { name: "ncrNumber", label: "Report Reference", type: "text", halfWidth: true },
+          {
+            name: "projectId",
+            label: "Development Project Site",
+            type: "select",
+            required: true,
+            options: projects.filter((p) => p.id !== "all").map((p) => ({ value: p.id, label: p.name })),
+          },
+          { name: "ncrNumber", label: "Report Reference", type: "text", halfWidth: true, placeholder: "e.g. NCR-00912" },
           { name: "defectSeverity", label: "Defect Severity", type: "select", required: true, halfWidth: true, options: [
             { value: "MINOR", label: "Minor" },
             { value: "MAJOR", label: "Major" },
             { value: "CRITICAL", label: "Critical" },
           ] },
-          { name: "inspectorName", label: "Inspecting Engineer", type: "text", halfWidth: true },
-          { name: "contractorName", label: "Contractor", type: "text", halfWidth: true },
-          { name: "description", label: "Observation", type: "textarea", required: true },
-          { name: "correctiveAction", label: "Corrective Action", type: "textarea" },
+          { name: "inspectorName", label: "Inspecting Engineer", type: "text", halfWidth: true, placeholder: "e.g. Suresh Patil" },
+          { name: "contractorName", label: "Contractor", type: "text", halfWidth: true, placeholder: "e.g. Apex Civil Works" },
+          { name: "description", label: "Observation & Defect Description", type: "textarea", required: true, placeholder: "Describe concrete compaction, reinforcement tie, or safety breach..." },
+          { name: "correctiveAction", label: "Mandatory Corrective Action", type: "textarea", placeholder: "Specify remediation timeline and rectification measures..." },
         ]}
       />
     </div>
   );
 }
+
 

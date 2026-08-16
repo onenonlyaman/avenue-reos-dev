@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
 
         {isSent ? (
           <div className="text-center space-y-3">
-            <CheckCircle2 className="h-8 w-8 text-emerald-700 mx-auto" />
+            <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400 mx-auto" />
             <p className="text-xs text-muted-foreground">
               If <span className="font-bold text-foreground">{email}</span> belongs to an active
               account, a reset token has been issued. Your administrator will provide the reset
@@ -62,32 +62,43 @@ export default function ForgotPasswordPage() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3 text-xs bg-red-50 text-red-900 border border-red-200 rounded">
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20 rounded-md font-medium"
+              >
                 {error}
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Corporate Email Address</Label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@avenuebuilders.in"
-                className="h-9 text-xs"
-              />
-            </div>
+            <fieldset disabled={isLoading} className="space-y-4 disabled:opacity-80">
+              <div className="space-y-1.5">
+                <Label htmlFor="forgot-email" className="text-xs font-semibold">
+                  Corporate Email Address
+                </Label>
+                <Input
+                  id="forgot-email"
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@avenuebuilders.in"
+                  className="h-9 text-xs"
+                  required
+                />
+              </div>
 
-            <Button type="submit" className="w-full h-9 text-xs font-semibold" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending Recovery Link...
-                </>
-              ) : (
-                "Send Password Reset Link"
-              )}
-            </Button>
+              <Button type="submit" className="w-full h-9 text-xs font-semibold" disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Sending Recovery Link...
+                  </>
+                ) : (
+                  "Send Password Reset Link"
+                )}
+              </Button>
+            </fieldset>
           </form>
         )}
 
@@ -100,3 +111,4 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
+

@@ -37,42 +37,48 @@ async function fetchEnvelope<T>(url: string, options?: RequestInit): Promise<T> 
 }
 
 export const searchApi = {
-  async executeSearch(query: string, scope: SearchScope): Promise<SearchResultItem[]> {
+  async executeSearch(query: string, scope: SearchScope, signal?: AbortSignal): Promise<SearchResultItem[]> {
     const encoded = encodeURIComponent(query);
-    return fetchEnvelope<SearchResultItem[]>(`${API_BASE}?q=${encoded}&scope=${scope}`);
+    return fetchEnvelope<SearchResultItem[]>(`${API_BASE}?q=${encoded}&scope=${scope}`, { signal });
   },
 
-  async executeAiPrompt(prompt: string): Promise<SearchResultItem[]> {
+  async executeAiPrompt(prompt: string, signal?: AbortSignal): Promise<SearchResultItem[]> {
+    const trimmed = prompt.trim();
+    if (!trimmed) {
+      return [];
+    }
+
     const response = await fetch("/api/v1/mcp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal,
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: `ai-req-${Date.now()}`,
         method: "tools/call",
         params: {
           name: "mcp_search_ai_query",
-          arguments: { prompt },
+          arguments: { prompt: trimmed },
         },
       }),
     });
 
     const json = await response.json();
 
-    if (json.error && json.error.message === "HITL_APPROVAL_REQUIRED") {
+    if (json.error && json.error.message && json.error.message.includes("HITL_APPROVAL_REQUIRED")) {
       return [
         {
           id: `hitl-${Date.now()}`,
-          title: `HITL Intercept: ${prompt}`,
-          subtitle: "Action requires Governance Director authorization before execution",
+          title: `Governance Safeguard: ${trimmed}`,
+          subtitle: "Action requires executive director authorization before execution",
           category: "HITL_APPROVAL",
           detailPayload: {
             entityType: "Governance Safeguard",
-            entityName: prompt,
+            entityName: trimmed,
             status: "PENDING_APPROVAL",
             metadata: {
               requiresHitl: true,
-              justification: "Mutative AI prompt exceeds automated safety bounds",
+              justification: "Autonomous prompt requires human confirmation",
             },
           },
         },
@@ -82,12 +88,12 @@ export const searchApi = {
     return [
       {
         id: `ai-${Date.now()}`,
-        title: `AI Intelligence Advisory: "${prompt}"`,
-        subtitle: json.result?.output || "Processed prompt across connected MCP microservices",
+        title: `AI Intelligence Advisory: "${trimmed}"`,
+        subtitle: json.result?.output || "Processed prompt across connected microservices",
         category: "AI_RESPONSE",
         detailPayload: {
           entityType: "MCP Microservice Analysis",
-          entityName: prompt,
+          entityName: trimmed,
           status: "SUCCESS",
           metadata: {
             resultText: json.result?.output || "Analysis completed",

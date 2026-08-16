@@ -181,4 +181,39 @@ export const constructionApi = {
     const query = projectId && projectId !== "All" ? `?projectId=${encodeURIComponent(projectId)}` : "";
     return fetchEnvelope<QualitySafetyInspection[]>(`${API_BASE}/inspections${query}`);
   },
+
+  async getSites(projectId?: string): Promise<ConstructionSiteItem[]> {
+    const query = projectId && projectId !== "All" ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return fetchEnvelope<ConstructionSiteItem[]>(`${API_BASE}/sites${query}`);
+  },
+
+  async createSite(payload: CreateSitePayload): Promise<ConstructionSiteItem> {
+    return fetchEnvelope<ConstructionSiteItem>(`${API_BASE}/sites`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
 };
+
+export interface ConstructionSiteItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectCode: string;
+  siteCode: string;
+  siteName: string;
+  gpsCoordinates: string;
+  status: string;
+  siteEngineerId: string;
+  siteEngineerName: string;
+  createdAt: string;
+}
+
+export interface CreateSitePayload {
+  projectId?: string;
+  siteCode?: string;
+  siteName: string;
+  gpsCoordinates?: string;
+  siteEngineerId?: string;
+  status?: string;
+}

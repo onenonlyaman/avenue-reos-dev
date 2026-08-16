@@ -19,12 +19,15 @@ export async function GET(request: NextRequest) {
         target_score INT NOT NULL DEFAULT 100,
         achieved_score INT NOT NULL DEFAULT 0,
         status VARCHAR(50) NOT NULL DEFAULT 'ON_TRACK',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM hr_performance_goals WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
+      SELECT * FROM hr_performance_goals 
+      WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid 
+      ORDER BY created_at DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -97,7 +100,8 @@ export async function POST(request: NextRequest) {
         target_score INT NOT NULL DEFAULT 100,
         achieved_score INT NOT NULL DEFAULT 0,
         status VARCHAR(50) NOT NULL DEFAULT 'ON_TRACK',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 

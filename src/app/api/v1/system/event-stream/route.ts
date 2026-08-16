@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { envelope, requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
+
+  const tenantId = auth.user.tenantId;
 
   try {
     await runtimeDdl("table:event_stream_logs", () => prisma.$executeRaw`
@@ -22,7 +25,10 @@ export async function GET(request: NextRequest) {
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM event_stream_logs WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC LIMIT 50
+      SELECT * FROM event_stream_logs 
+      WHERE tenant_id = ${tenantId}::uuid 
+      ORDER BY created_at DESC 
+      LIMIT 50
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -35,30 +41,80 @@ export async function GET(request: NextRequest) {
       status: r.status,
     }));
 
-    return NextResponse.json({
-      success: true,
-      status_code: 200,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
+    return envelope(200, {
       data: mapped,
-      error: null,
       meta: { total_records: mapped.length },
     });
   } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
+    return envelope(500, {
       data: [],
       error: {
         code: "EVENT_STREAM_FETCH_ERROR",
         message: safeErrorMessage(err, "Platform event log could not be loaded"),
       },
       meta: { total_records: 0 },
-    }, { status: 500 });
+    });
   }
 }
 
+export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId;
 
+  try {
+    const body = await request.json();
+    const {
+      eventName,
+      originModule,
+      targetModule,
+      payloadSummary,
+      status = "DELIVERED",
+    } = body;
+
+    if (!eventName || !originModule || !targetModule || !payloadSummary) {
+      return envelope(400, {
+        data: null,
+        error: { code: "VALIDATION_ERROR", message: "Event name, origin, target, and payload summary are required." },
+      });
+    }
+
+    const inserted = await prisma.$queryRaw<any[]>`
+      INSERT INTO event_stream_logs (
+        tenant_id, event_name, origin_module, target_module, payload_summary, status
+      ) VALUES (
+        ${tenantId}::uuid,
+        ${eventName.trim()},
+        ${originModule.trim()},
+        ${targetModule.trim()},
+        ${payloadSummary.trim()},
+        ${status.trim().toUpperCase()}
+      )
+      RETURNING *
+    `;
+
+    const r = inserted[0];
+    const mapped = {
+      id: r.id,
+      eventName: r.event_name,
+      originModule: r.origin_module,
+      targetModule: r.target_module,
+      payloadSummary: r.payload_summary,
+      timestamp: r.created_at,
+      status: r.status,
+    };
+
+    return envelope(201, {
+      data: mapped,
+    });
+  } catch (err: unknown) {
+    return envelope(500, {
+      data: null,
+      error: {
+        code: "EVENT_STREAM_CREATE_ERROR",
+        message: safeErrorMessage(err, "Event stream entry could not be logged"),
+      },
+    });
+  }
+}

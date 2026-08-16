@@ -25,13 +25,19 @@ const AuthContext = createContext<AuthContextType>({
   refreshUser: async () => {},
 });
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+export function AuthProvider({
+  children,
+  initialUser = null,
+}: {
+  children: React.ReactNode;
+  initialUser?: UserProfile | null;
+}) {
+  const [user, setUser] = useState<UserProfile | null>(initialUser);
+  const [loading, setLoading] = useState<boolean>(!initialUser);
 
   const fetchUser = async () => {
     try {
-      setLoading(true);
+      if (!user) setLoading(true);
       const data = await authApi.getMe();
       setUser(data);
     } catch {
@@ -42,8 +48,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    fetchUser();
-  }, []);
+    if (!initialUser) {
+      fetchUser();
+    }
+  }, [initialUser]);
 
   const login = async (email: string, password: string): Promise<AuthResponse> => {
     const res = await authApi.login(email, password);

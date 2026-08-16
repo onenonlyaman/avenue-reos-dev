@@ -134,23 +134,6 @@ CREATE TABLE IF NOT EXISTS system_users (
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
--- source: src/app/api/v1/auth/me/route.ts
-CREATE TABLE IF NOT EXISTS system_users (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id UUID NOT NULL,
-        full_name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL DEFAULT 'pbkdf2_sha256$default_hash',
-        department VARCHAR(100) NOT NULL,
-        designation VARCHAR(100) NOT NULL,
-        site_location VARCHAR(255) NOT NULL DEFAULT 'Nashik Corporate Office',
-        mfa_enabled BOOLEAN NOT NULL DEFAULT true,
-        status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
-        role VARCHAR(100) NOT NULL DEFAULT 'Governance Director',
-        last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
 -- source: src/app/api/v1/communications/approvals/route.ts
 CREATE TABLE IF NOT EXISTS communications_approvals (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -245,10 +228,10 @@ CREATE TABLE IF NOT EXISTS cam_invoices (
           unit_name VARCHAR(255) NOT NULL,
           super_builtup_sqft DECIMAL(15,2) NOT NULL,
           billing_period VARCHAR(50) NOT NULL,
-          base_cam_amount DECIMAL(15,2) NOT NULL,
-          gst_amount DECIMAL(15,2) NOT NULL,
-          total_due_amount DECIMAL(15,2) NOT NULL,
-          payment_status VARCHAR(50) NOT NULL,
+          base_cam_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+          gst_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+          total_due_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+          payment_status VARCHAR(50) NOT NULL DEFAULT 'UNPAID',
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
@@ -260,12 +243,13 @@ CREATE TABLE IF NOT EXISTS unit_handovers (
             handover_reference VARCHAR(100) NOT NULL,
             unit_name VARCHAR(255) NOT NULL,
             buyer_name VARCHAR(255) NOT NULL,
-            desnagging_completion_pct DECIMAL(5,2) NOT NULL,
+            desnagging_completion_pct DECIMAL(5,2) NOT NULL DEFAULT 0.00,
             financial_noc_cleared BOOLEAN NOT NULL DEFAULT false,
-            outstanding_balance DECIMAL(15,2) NOT NULL,
+            outstanding_balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,
             target_handover_date DATE NOT NULL,
             requires_hitl BOOLEAN NOT NULL DEFAULT false,
-            status VARCHAR(50) NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
+            rejection_reason TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           );
@@ -282,6 +266,7 @@ CREATE TABLE IF NOT EXISTS maintenance_tickets (
       sla_status VARCHAR(50) NOT NULL DEFAULT 'Within SLA',
       assigned_contractor VARCHAR(255),
       status VARCHAR(50) NOT NULL DEFAULT 'OPEN',
+      rejection_reason TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -724,8 +709,8 @@ CREATE TABLE IF NOT EXISTS goods_receipt_notes (
             vendor_name VARCHAR(255) NOT NULL,
             material_name VARCHAR(255) NOT NULL,
             accepted_quantity DECIMAL(15,2) NOT NULL,
-            rejected_quantity DECIMAL(15,2) NOT NULL,
-            unit_of_measure VARCHAR(50) NOT NULL,
+            rejected_quantity DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+            unit_of_measure VARCHAR(50) NOT NULL DEFAULT 'Units',
             inspection_status VARCHAR(50) NOT NULL,
             gatepass_number VARCHAR(100) NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -82,6 +82,26 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    let liveUsersCount = 0;
+    try {
+      const userCountRes = await prisma.$queryRaw<any[]>`
+        SELECT COUNT(*)::int AS count FROM system_users WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND status = 'ACTIVE'
+      `;
+      liveUsersCount = userCountRes?.[0]?.count ? Number(userCountRes[0].count) : 0;
+    } catch {
+      liveUsersCount = Number(record?.activeUsersCount ?? record?.active_users_count ?? 1);
+    }
+
+    let liveSitesCount = 0;
+    try {
+      const siteCountRes = await prisma.$queryRaw<any[]>`
+        SELECT COUNT(*)::int AS count FROM construction_sites WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid
+      `;
+      liveSitesCount = siteCountRes?.[0]?.count ? Number(siteCountRes[0].count) : 0;
+    } catch {
+      liveSitesCount = Number(record?.activeSiteAccountsCount ?? record?.active_site_accounts_count ?? 1);
+    }
+
     const mapped = {
       id: record.id,
       organizationLegalName: record.organizationLegalName || record.organization_legal_name || "",
@@ -90,8 +110,8 @@ export async function GET(request: NextRequest) {
       operationalTimezone: record.operationalTimezone || record.operational_timezone || "Asia/Kolkata (IST)",
       baseCurrency: record.baseCurrency || record.base_currency || "INR (₹)",
       fiscalYearCycle: record.fiscalYearCycle || record.fiscal_year_cycle || "April - March (India)",
-      activeUsersCount: Number(record.activeUsersCount ?? record.active_users_count ?? 1),
-      activeSiteAccountsCount: Number(record.activeSiteAccountsCount ?? record.active_site_accounts_count ?? 1),
+      activeUsersCount: liveUsersCount,
+      activeSiteAccountsCount: liveSitesCount,
     };
 
     return NextResponse.json({

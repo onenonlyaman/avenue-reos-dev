@@ -1,342 +1,379 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { tallyErpApi, FinancialReportsResponse } from "@/services/tallyErpApi";
+import { BookScope } from "@/lib/accounting/multiBookScope";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { BookOpen, PieChart, TrendingUp, ShieldCheck, Download, Filter, FileSpreadsheet } from "lucide-react";
-import { tallyErpApi, FinancialReportsResponse } from "@/services/tallyErpApi";
+import { toast } from "@/components/ui/sonner";
+import { Landmark, ArrowDownRight, ArrowUpRight, Scale, Clock, TrendingUp } from "lucide-react";
 
-export function FinancialReportsView() {
-  const [reports, setReports] = useState<FinancialReportsResponse | null>(null);
+interface FinancialReportsViewProps {
+  bookScope?: BookScope;
+}
+
+export function FinancialReportsView({ bookScope = "STATUTORY" }: FinancialReportsViewProps) {
+  const [data, setData] = useState<FinancialReportsResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [sampleThreshold, setSampleThreshold] = useState<string>("500000");
+  const [activeSubTab, setActiveSubTab] = useState<"bs" | "pl" | "tb" | "aging">("bs");
 
-  const loadData = async () => {
+  const loadFinancials = async () => {
     setIsLoading(true);
     try {
-      const res = await tallyErpApi.fetchFinancialReports();
-      setReports(res);
-    } catch {
-      setReports(null);
+      const res = await tallyErpApi.fetchFinancialReports(bookScope);
+      setData(res);
+    } catch (err: any) {
+      toast({ title: "Failed to load Financial Reports", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadFinancials();
+  }, [bookScope]);
+
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground animate-pulse">
+        Compiling Balance Sheet, P&L, Trial Balance & Aging Analysis...
+      </div>
+    );
+  }
+
+  const balanceSheet = data?.balanceSheet || [];
+  const profitAndLoss = data?.profitAndLoss || [];
+  const trialBalance = data?.trialBalance || [];
+  const agingReport = data?.agingReport || [];
+
+  const totalAssets = data?.totalAssets || 0;
+  const totalLiabilities = data?.totalLiabilities || 0;
+  const netWorkingCapital = data?.netWorkingCapital || 0;
+  const cashRunway = data?.cashRunwayMonths !== undefined
+    ? data.cashRunwayMonths
+    : (totalLiabilities > 0 ? Number((totalAssets / (totalLiabilities / 12)).toFixed(1)) : 0);
+
+  const totalTbDebit = trialBalance.reduce((acc, t) => acc + t.debitAmount, 0);
+  const totalTbCredit = trialBalance.reduce((acc, t) => acc + t.creditAmount, 0);
 
   return (
     <div className="space-y-6">
+      {/* Top Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <CorporateStatCard
-          label="Estimated Cash Runway"
-          value={`${reports?.cashRunwayMonths || 0} Months`}
-          subtext="Net Working Capital Runway"
-          icon={TrendingUp}
-          trend="Positive Runway"
-          trendDirection="up"
+          label="Total Balance Sheet Assets"
+          value={`₹${totalAssets.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+          subtext="Bank, Cash & Receivables Assets"
+          icon={Landmark}
+          trend="Audited"
+          trendDirection="neutral"
+        />
+        <CorporateStatCard
+          label="Total Liabilities & Capital"
+          value={`₹${totalLiabilities.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+          subtext="Trade Payables & Duties"
+          icon={Scale}
+          trend="Current"
+          trendDirection="neutral"
         />
         <CorporateStatCard
           label="Net Working Capital"
-          value={`₹${(reports?.netWorkingCapital || 0).toLocaleString("en-IN")}`}
-          subtext="Current Assets minus Liabilities"
-          icon={PieChart}
-          trend="Healthy Solvency"
-          trendDirection="neutral"
+          value={`₹${netWorkingCapital.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+          subtext="Assets minus Liabilities"
+          icon={TrendingUp}
+          trend={netWorkingCapital >= 0 ? "Positive Liquidity" : "Deficit"}
+          trendDirection={netWorkingCapital >= 0 ? "up" : "down"}
         />
         <CorporateStatCard
-          label="Balance Sheet Ledgers"
-          value={String(reports?.balanceSheet.length || 0)}
-          subtext="Asset & Liability Grouping"
-          icon={BookOpen}
-          trend="Audited Tree"
-          trendDirection="neutral"
-        />
-        <CorporateStatCard
-          label="Auditor Sampling Engine"
-          value="CA Audit Mode"
-          subtext="Tally XML / Excel Export Active"
-          icon={ShieldCheck}
-          trend="Ready for Audit"
-          trendDirection="neutral"
+          label="Estimated Cash Runway"
+          value={`${cashRunway} Months`}
+          subtext="Operational Burn Coverage"
+          icon={Clock}
+          trend="Adequate"
+          trendDirection="up"
         />
       </div>
 
-      <Tabs defaultValue="bs" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 max-w-3xl h-9">
-          <TabsTrigger value="bs" className="text-xs font-semibold">
-            Balance Sheet
-          </TabsTrigger>
-          <TabsTrigger value="pnl" className="text-xs font-semibold">
-            Profit & Loss
-          </TabsTrigger>
-          <TabsTrigger value="tb" className="text-xs font-semibold">
-            Trial Balance
-          </TabsTrigger>
-          <TabsTrigger value="aging" className="text-xs font-semibold">
-            Bill-by-Bill Aging
-          </TabsTrigger>
-          <TabsTrigger value="auditor" className="text-xs font-semibold">
-            CA Auditor Sampling
-          </TabsTrigger>
-        </TabsList>
+      {/* Sub Navigation */}
+      <div className="flex items-center gap-2 border-b border-border pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("bs")}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+            activeSubTab === "bs" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50"
+          }`}
+        >
+          Balance Sheet
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("pl")}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+            activeSubTab === "pl" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50"
+          }`}
+        >
+          Profit & Loss Statement
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("tb")}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+            activeSubTab === "tb" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50"
+          }`}
+        >
+          Trial Balance
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("aging")}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+            activeSubTab === "aging" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/50"
+          }`}
+        >
+          Bill-by-Bill Aging Analysis
+        </button>
+      </div>
 
-        <TabsContent value="bs" className="pt-4">
-          <Card className="border-border shadow-xs">
+      {/* 1. Balance Sheet */}
+      {activeSubTab === "bs" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card>
             <CardHeader className="pb-3 border-b border-border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-semibold font-heading">
-                    Enterprise Balance Sheet (Dual-Column Schedule III)
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Assets, Liabilities, and Equity ledger balances
-                  </CardDescription>
+              <CardTitle className="text-base font-semibold text-primary">Assets & Resources</CardTitle>
+              <CardDescription className="text-xs">Bank, Cash, Receivables & Stock</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {balanceSheet.filter((b) => b.category === "Assets").length === 0 ? (
+                <div className="p-6">
+                  <CorporateEmptyState icon={Landmark} title="No Asset Ledgers" description="Asset accounts will display here." />
                 </div>
-                <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-                  <Download className="h-3.5 w-3.5" />
-                  Export XML / Schedule III
-                </Button>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Ledger Account</TableHead>
+                      <TableHead>Sub Group</TableHead>
+                      <TableHead className="text-right">Amount (₹)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {balanceSheet
+                      .filter((b) => b.category === "Assets")
+                      .map((b, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs font-medium">{b.ledgerName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{b.subGroup}</TableCell>
+                          <TableCell className="font-mono text-xs font-bold text-right">
+                            ₹{b.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3 border-b border-border">
+              <CardTitle className="text-base font-semibold text-rose-600">Liabilities & Capital</CardTitle>
+              <CardDescription className="text-xs">Trade Creditors, Duties & Borrowings</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              {balanceSheet.filter((b) => b.category === "Liabilities").length === 0 ? (
+                <div className="p-6">
+                  <CorporateEmptyState icon={Scale} title="No Liability Ledgers" description="Liability accounts will display here." />
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Ledger Account</TableHead>
+                      <TableHead>Sub Group</TableHead>
+                      <TableHead className="text-right">Amount (₹)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {balanceSheet
+                      .filter((b) => b.category === "Liabilities")
+                      .map((b, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs font-medium">{b.ledgerName}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{b.subGroup}</TableCell>
+                          <TableCell className="font-mono text-xs font-bold text-right text-rose-600">
+                            ₹{Math.abs(b.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* 2. Profit & Loss */}
+      {activeSubTab === "pl" && (
+        <Card>
+          <CardHeader className="pb-3 border-b border-border">
+            <CardTitle className="text-base font-semibold">Profit & Loss Statement</CardTitle>
+            <CardDescription className="text-xs">Operational Income vs Project & Administrative Expenses</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {profitAndLoss.length === 0 ? (
+              <div className="p-6">
+                <CorporateEmptyState icon={Scale} title="No Income / Expense Transactions" description="Post sales or expense vouchers to see P&L." />
               </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {isLoading ? (
-                <div className="p-8 text-center text-xs text-muted-foreground">Compiling Balance Sheet...</div>
-              ) : !reports?.balanceSheet || reports.balanceSheet.length === 0 ? (
-                <CorporateEmptyState
-                  title="No Balance Sheet Ledgers Found"
-                  description="Post vouchers to generate live Balance Sheet statements."
-                  icon={BookOpen}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border">
-                      <TableHead className="text-xs font-semibold">Primary Group</TableHead>
-                      <TableHead className="text-xs font-semibold">Subgroup</TableHead>
-                      <TableHead className="text-xs font-semibold">Ledger Name</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Amount (INR)</TableHead>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Classification</TableHead>
+                    <TableHead>Particulars</TableHead>
+                    <TableHead>Account Group</TableHead>
+                    <TableHead className="text-right">Amount (₹)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {profitAndLoss.map((p, i) => (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            p.type === "INCOME"
+                              ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]"
+                              : "bg-rose-500/10 text-rose-600 border-rose-500/20 text-[10px]"
+                          }
+                        >
+                          {p.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold">{p.ledgerName}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{p.category}</TableCell>
+                      <TableCell className="font-mono text-xs font-bold text-right">
+                        ₹{p.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reports.balanceSheet.map((item, idx) => (
-                      <TableRow key={idx} className="border-border">
-                        <TableCell className="text-xs font-bold">{item.category}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{item.subGroup}</TableCell>
-                        <TableCell className="text-xs font-medium">{item.ledgerName}</TableCell>
-                        <TableCell className="text-xs font-mono font-bold text-right">
-                          ₹{item.amount.toLocaleString("en-IN")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-        <TabsContent value="pnl" className="pt-4">
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <CardTitle className="text-base font-semibold font-heading">
-                Statement of Profit & Loss (P&L)
-              </CardTitle>
+      {/* 3. Trial Balance */}
+      {activeSubTab === "tb" && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-border">
+            <div>
+              <CardTitle className="text-base font-semibold">Trial Balance Statement</CardTitle>
               <CardDescription className="text-xs">
-                Operating Income, Direct Construction Expenses & Overhead Allocation
+                Verification of double-entry ledger debit & credit balances
               </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {!reports?.profitAndLoss || reports.profitAndLoss.length === 0 ? (
-                <CorporateEmptyState
-                  title="No Income or Expense Ledgers Found"
-                  description="Post sales or purchase vouchers to calculate net profit."
-                  icon={PieChart}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border">
-                      <TableHead className="text-xs font-semibold">Type</TableHead>
-                      <TableHead className="text-xs font-semibold">Group</TableHead>
-                      <TableHead className="text-xs font-semibold">Ledger Name</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Amount (INR)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reports.profitAndLoss.map((item, idx) => (
-                      <TableRow key={idx} className="border-border">
-                        <TableCell className="text-xs">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${
-                              item.type === "INCOME"
-                                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                                : "bg-destructive/10 text-destructive border-destructive/20"
-                            }`}
-                          >
-                            {item.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs font-medium">{item.category}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{item.ledgerName}</TableCell>
-                        <TableCell className="text-xs font-mono font-bold text-right">
-                          ₹{item.amount.toLocaleString("en-IN")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="tb" className="pt-4">
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <CardTitle className="text-base font-semibold font-heading">
-                Comprehensive Trial Balance
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Debits and Credits verification ledger
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {!reports?.trialBalance || reports.trialBalance.length === 0 ? (
-                <CorporateEmptyState
-                  title="No Trial Balance Entries"
-                  description="Chart of accounts ledgers will be listed here with balances."
-                  icon={BookOpen}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border">
-                      <TableHead className="text-xs font-semibold">Ledger Account Name</TableHead>
-                      <TableHead className="text-xs font-semibold">Primary Group</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Debit (INR)</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Credit (INR)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reports.trialBalance.map((item, idx) => (
-                      <TableRow key={idx} className="border-border">
-                        <TableCell className="text-xs font-semibold">{item.ledgerName}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{item.primaryGroup}</TableCell>
-                        <TableCell className="text-xs font-mono text-right">
-                          {item.debitAmount > 0 ? `₹${item.debitAmount.toLocaleString("en-IN")}` : "-"}
-                        </TableCell>
-                        <TableCell className="text-xs font-mono text-right">
-                          {item.creditAmount > 0 ? `₹${item.creditAmount.toLocaleString("en-IN")}` : "-"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="aging" className="pt-4">
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <CardTitle className="text-base font-semibold font-heading">
-                Bill-by-Bill Receivables & Payables Aging Breakdown
-              </CardTitle>
-              <CardDescription className="text-xs">
-                30, 60, 90, and 90+ days aging windows
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {!reports?.agingReport || reports.agingReport.length === 0 ? (
-                <CorporateEmptyState
-                  title="Zero Aging Outstanding"
-                  description="No receivable or payable accounts exceed due dates."
-                  icon={ShieldCheck}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border">
-                      <TableHead className="text-xs font-semibold">Party / Customer Name</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">0-30 Days</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">31-60 Days</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">61-90 Days</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">90+ Days Overdue</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reports.agingReport.map((a, idx) => (
-                      <TableRow key={idx} className="border-border">
-                        <TableCell className="text-xs font-semibold">{a.partyName}</TableCell>
-                        <TableCell className="text-xs font-mono text-right">₹{a.days30.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-xs font-mono text-right">₹{a.days60.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-xs font-mono text-right">₹{a.days90.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-xs font-mono font-bold text-destructive text-right">
-                          ₹{a.days90Plus.toLocaleString("en-IN")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="auditor" className="pt-4">
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-semibold font-heading">
-                    Statutory Auditor & CA Sampling Workspace
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Monetary threshold filters and verification sign-offs
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    value={sampleThreshold}
-                    onChange={(e) => setSampleThreshold(e.target.value)}
-                    placeholder="Min Amount"
-                    className="w-36 h-7 text-xs font-mono"
-                  />
-                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-                    <Filter className="h-3.5 w-3.5" />
-                    Filter Sample
-                  </Button>
-                  <Button size="sm" className="h-7 text-xs font-semibold gap-1">
-                    <FileSpreadsheet className="h-3.5 w-3.5" />
-                    Export Tally XML Schema
-                  </Button>
-                </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="font-mono text-xs text-emerald-600">
+                Debits: ₹{totalTbDebit.toLocaleString("en-IN")}
+              </Badge>
+              <Badge variant="outline" className="font-mono text-xs text-primary">
+                Credits: ₹{totalTbCredit.toLocaleString("en-IN")}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {trialBalance.length === 0 ? (
+              <div className="p-6">
+                <CorporateEmptyState icon={Scale} title="No Ledgers Recorded" description="Create accounts and record vouchers to view Trial Balance." />
               </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="p-4 bg-muted/20 border border-border rounded-lg space-y-2">
-                <div className="text-xs font-bold text-foreground">Sampling Strategy Active:</div>
-                <div className="text-xs text-muted-foreground">
-                  Filtering vouchers where amount &gt; ₹{Number(sampleThreshold).toLocaleString("en-IN")}.
-                  External auditors can review MCA edit logs, verified sign-offs, and double-entry postings.
-                </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ledger Name</TableHead>
+                    <TableHead>Account Group</TableHead>
+                    <TableHead className="text-right">Debit Balance (₹)</TableHead>
+                    <TableHead className="text-right">Credit Balance (₹)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trialBalance.map((t, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-xs font-semibold">{t.ledgerName}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{t.primaryGroup}</TableCell>
+                      <TableCell className="font-mono text-xs font-bold text-right text-emerald-600">
+                        {t.debitAmount > 0 ? `₹${t.debitAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "—"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs font-bold text-right text-primary">
+                        {t.creditAmount > 0 ? `₹${t.creditAmount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 4. Bill-by-Bill Aging */}
+      {activeSubTab === "aging" && (
+        <Card>
+          <CardHeader className="pb-3 border-b border-border">
+            <CardTitle className="text-base font-semibold">Bill-by-Bill Outstanding Aging Slabs</CardTitle>
+            <CardDescription className="text-xs">
+              Receivables and payables aged into 0-15, 16-30, 31-45, and 45+ overdue day slabs
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {agingReport.length === 0 ? (
+              <div className="p-6">
+                <CorporateEmptyState
+                  icon={Clock}
+                  title="No Overdue Bills Found"
+                  description="Bill references recorded in vouchers will appear here with dynamic aging brackets."
+                />
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Party / Vendor</TableHead>
+                    <TableHead className="text-right">Current (0-15d)</TableHead>
+                    <TableHead className="text-right">16-30 Days</TableHead>
+                    <TableHead className="text-right">31-45 Days</TableHead>
+                    <TableHead className="text-right">45+ Days (Critical)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {agingReport.map((a, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-xs font-semibold">{a.partyName}</TableCell>
+                      <TableCell className="font-mono text-xs text-right">
+                        ₹{a.currentAmount.toLocaleString("en-IN")}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-right">
+                        ₹{a.days30.toLocaleString("en-IN")}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-right text-amber-600">
+                        ₹{a.days60.toLocaleString("en-IN")}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs font-bold text-right text-rose-600">
+                        ₹{a.days90Plus.toLocaleString("en-IN")}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

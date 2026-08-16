@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { requireApiAccess, AuthenticatedContext, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
+
+  const { user } = auth as AuthenticatedContext;
+  const tenantId = user.tenantId;
 
   try {
     const { searchParams } = new URL(request.url);
@@ -29,11 +31,16 @@ export async function GET(request: NextRequest) {
     let raw: any[] = [];
     if (channelId) {
       raw = await prisma.$queryRaw<any[]>`
-        SELECT * FROM chat_messages WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND channel_id = ${channelId}::uuid ORDER BY created_at ASC
+        SELECT * FROM chat_messages
+        WHERE tenant_id = ${tenantId}::uuid AND channel_id = ${channelId}::uuid
+        ORDER BY created_at ASC
       `;
     } else {
       raw = await prisma.$queryRaw<any[]>`
-        SELECT * FROM chat_messages WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at ASC LIMIT 50
+        SELECT * FROM chat_messages
+        WHERE tenant_id = ${tenantId}::uuid
+        ORDER BY created_at ASC
+        LIMIT 100
       `;
     }
 
@@ -78,12 +85,14 @@ export async function POST(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const { user } = auth as AuthenticatedContext;
+  const tenantId = user.tenantId;
+
   try {
     const body = await request.json();
-    const { channelId, senderName, senderRole, content, isPinned, actionLinkUrl, actionLinkLabel } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const { channelId, content, isPinned, actionLinkUrl, actionLinkLabel } = body;
 
-    if (!channelId || !content) {
+    if (!channelId || !content || !content.trim()) {
       return NextResponse.json({
         success: false,
         status_code: 400,
@@ -110,12 +119,15 @@ export async function POST(request: NextRequest) {
       )
     `);
 
+    const senderName = user.fullName || body.senderName || "Enterprise User";
+    const senderRole = user.role || body.senderRole || "Staff";
+
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO chat_messages (
-        tenant_id, channel_id, sender_name, sender_role, content, is_pinned, action_link_url, action_link_label
+        tenant_id, channel_id, sender_name, sender_role, content, is_pinned, action_link_url, action_link_label, created_at
       ) VALUES (
-        ${tenantId}::uuid, ${channelId}::uuid, ${senderName || "System Admin"}, ${senderRole || "Operations Lead"},
-        ${content}, ${Boolean(isPinned)}, ${actionLinkUrl || null}, ${actionLinkLabel || null}
+        ${tenantId}::uuid, ${channelId}::uuid, ${senderName}, ${senderRole},
+        ${content.trim()}, ${Boolean(isPinned)}, ${actionLinkUrl || null}, ${actionLinkLabel || null}, NOW()
       )
       RETURNING *
     `;
@@ -125,7 +137,7 @@ export async function POST(request: NextRequest) {
     await prisma.$executeRaw`
       UPDATE chat_channels
       SET last_activity = NOW()
-      WHERE id = ${channelId}::uuid
+      WHERE id = ${channelId}::uuid AND tenant_id = ${tenantId}::uuid
     `;
 
     return NextResponse.json({
@@ -163,5 +175,81 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function PATCH(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
 
+  const { user } = auth as AuthenticatedContext;
+  const tenantId = user.tenantId;
 
+  try {
+    const body = await request.json();
+    const { messageId, isPinned } = body;
+
+    if (!messageId) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "MISSING_ID", message: "Message ID is required." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const updated = await prisma.$queryRaw<any[]>`
+      UPDATE chat_messages
+      SET is_pinned = ${Boolean(isPinned)}
+      WHERE id = ${messageId}::uuid AND tenant_id = ${tenantId}::uuid
+      RETURNING *
+    `;
+
+    if (!updated || updated.length === 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 404,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "MESSAGE_NOT_FOUND", message: "Message could not be found." },
+        meta: null,
+      }, { status: 404 });
+    }
+
+    const item = updated[0];
+
+    return NextResponse.json({
+      success: true,
+      status_code: 200,
+      timestamp: new Date().toISOString(),
+      request_id: `req-${Date.now()}`,
+      data: {
+        id: item.id,
+        channelId: item.channel_id,
+        senderName: item.sender_name,
+        senderRole: item.sender_role,
+        content: item.content,
+        timestamp: item.created_at,
+        isPinned: Boolean(item.is_pinned),
+        actionLinkUrl: item.action_link_url || undefined,
+        actionLinkLabel: item.action_link_label || undefined,
+      },
+      error: null,
+      meta: null,
+    });
+  } catch (err: unknown) {
+    return NextResponse.json({
+      success: false,
+      status_code: 500,
+      timestamp: new Date().toISOString(),
+      request_id: `req-${Date.now()}`,
+      data: null,
+      error: {
+        code: "MESSAGE_PIN_ERROR",
+        message: safeErrorMessage(err, "Message pin status could not be changed"),
+      },
+      meta: null,
+    }, { status: 500 });
+  }
+}

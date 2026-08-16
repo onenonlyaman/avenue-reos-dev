@@ -41,6 +41,9 @@ export function PortfolioValuationView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Portfolio Gross Development Value (GDV) & NAV
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Asset-level valuation schedules, saleable footprint, and net equity realization.
+          </p>
         </div>
       </div>
 
@@ -103,48 +106,50 @@ export function PortfolioValuationView() {
         />
       ) : (
         <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted/40">
-              <TableRow>
-                <TableHead className="text-xs font-semibold">Development Project</TableHead>
-                <TableHead className="text-xs font-semibold">Asset Category</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Total Saleable Area</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Avg Realized Rate (₹/Sq. Ft.)</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Gross Valuation (₹ Cr)</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Net Asset Value (₹ Cr)</TableHead>
-                <TableHead className="text-xs font-semibold text-center">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {valuations.map((v) => (
-                <TableRow key={v.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell className="text-xs py-3 font-semibold text-foreground">
-                    {v.projectName}
-                  </TableCell>
-                  <TableCell className="text-xs py-3 font-medium text-foreground">
-                    {v.developmentType}
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-right font-mono text-muted-foreground">
-                    {v.totalSaleableAreaSqft.toLocaleString("en-IN")} Sq. Ft.
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
-                    ₹{v.avgRealizedRatePerSqft.toLocaleString("en-IN")}
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-right font-mono font-bold text-primary text-sm">
-                    ₹{v.grossDevelopmentValueCr.toFixed(2)} Cr
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-right font-mono font-bold text-emerald-800">
-                    ₹{v.netAssetValueCr.toFixed(2)} Cr
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-center">
-                    <Badge variant="outline" className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border-emerald-300">
-                      {v.status}
-                    </Badge>
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table className="min-w-[760px]">
+              <TableHeader className="bg-muted/40">
+                <TableRow>
+                  <TableHead className="text-xs font-semibold">Development Project</TableHead>
+                  <TableHead className="text-xs font-semibold">Asset Category</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Total Saleable Area</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Avg Realized Rate (₹/Sq. Ft.)</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Gross Valuation (₹ Cr)</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Net Asset Value (₹ Cr)</TableHead>
+                  <TableHead className="text-xs font-semibold text-center">Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {valuations.map((v) => (
+                  <TableRow key={v.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="text-xs py-3 font-semibold text-foreground">
+                      {v.projectName}
+                    </TableCell>
+                    <TableCell className="text-xs py-3 font-medium text-foreground">
+                      {v.developmentType}
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-right font-mono text-muted-foreground">
+                      {v.totalSaleableAreaSqft.toLocaleString("en-IN")} Sq. Ft.
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
+                      ₹{v.avgRealizedRatePerSqft.toLocaleString("en-IN")}
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-primary text-sm">
+                      ₹{v.grossDevelopmentValueCr.toFixed(2)} Cr
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                      ₹{v.netAssetValueCr.toFixed(2)} Cr
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-center">
+                      <Badge variant="outline" className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+                        {v.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,15 @@ import { Loader2 } from "lucide-react";
 import { communicationsApi, ChatChannel } from "@/services/communicationsApi";
 import { useCatalogOptions } from "@/hooks/useCatalogOptions";
 
+const DEFAULT_DEPARTMENTS = [
+  "Site Operations",
+  "Customer Care",
+  "Finance & Billing",
+  "Legal & Compliance",
+  "Quality Assurance",
+  "Executive Management",
+];
+
 interface CreateChannelModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -39,9 +48,17 @@ export function CreateChannelModal({ isOpen, onClose, onSuccess }: CreateChannel
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const depts = departments.length > 0 ? departments : DEFAULT_DEPARTMENTS;
+
+  useEffect(() => {
+    if (depts.length > 0 && !depts.includes(department)) {
+      setDepartment(depts[0]);
+    }
+  }, [depts]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!channelName) {
+    if (!channelName.trim()) {
       setError("Channel name is required");
       return;
     }
@@ -50,13 +67,16 @@ export function CreateChannelModal({ isOpen, onClose, onSuccess }: CreateChannel
       setIsSubmitting(true);
       setError(null);
       const created = await communicationsApi.createChannel({
-        channelName,
+        channelName: channelName.trim(),
         department,
-        description,
+        description: description.trim(),
         isPrivate,
       });
       onSuccess(created);
       onClose();
+      setChannelName("");
+      setDescription("");
+      setIsPrivate(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Channel could not be saved");
     } finally {
@@ -98,14 +118,11 @@ export function CreateChannelModal({ isOpen, onClose, onSuccess }: CreateChannel
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {departments.map((option) => (
+                {depts.map((option) => (
                   <SelectItem key={option} value={option}>
                     {option}
                   </SelectItem>
                 ))}
-                {departments.length === 0 && (
-                  <div className="px-2 py-3 text-[11px] text-muted-foreground">No entries configured.</div>
-                )}
               </SelectContent>
             </Select>
           </div>

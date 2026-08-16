@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
@@ -10,30 +11,50 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { id } = body;
 
-    if (!id) {
-      return NextResponse.json({
-        success: false,
-        status_code: 400,
-        timestamp: new Date().toISOString(),
-        request_id: `req-${Date.now()}`,
-        data: null,
-        error: { code: "INVALID_ID", message: "Handover ID is required" },
-        meta: null,
-      }, { status: 400 });
+    if (!id || typeof id !== "string") {
+      return NextResponse.json(
+        {
+          success: false,
+          status_code: 400,
+          timestamp: new Date().toISOString(),
+          request_id: `req-${Date.now()}`,
+          data: null,
+          error: { code: "INVALID_ID", message: "Handover identifier is required" },
+          meta: null,
+        },
+        { status: 400 }
+      );
     }
 
-    const model = (prisma as any).unitHandover;
-    if (model?.update) {
-      await model.update({
-        where: { id },
-        data: { status: "READY_FOR_HANDOVER" },
-      });
-    } else {
-      await prisma.$executeRaw`
-        UPDATE unit_handovers
-        SET status = 'READY_FOR_HANDOVER', updated_at = NOW()
-        WHERE id = ${id}::uuid
-      `;
+    const result = await prisma.unitHandover.updateMany({
+      where: {
+        id,
+        tenantId: ACTIVE_TENANT_ID,
+        status: "PENDING_APPROVAL",
+      },
+      data: {
+        status: "READY_FOR_HANDOVER",
+        rejectionReason: null,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (result.count === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          status_code: 404,
+          timestamp: new Date().toISOString(),
+          request_id: `req-${Date.now()}`,
+          data: null,
+          error: {
+            code: "HANDOVER_NOT_FOUND",
+            message: "No pending handover approval found for the specified unit.",
+          },
+          meta: null,
+        },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({
@@ -41,22 +62,25 @@ export async function POST(request: NextRequest) {
       status_code: 200,
       timestamp: new Date().toISOString(),
       request_id: `req-${Date.now()}`,
-      data: { success: true, id },
+      data: { success: true, id, status: "READY_FOR_HANDOVER" },
       error: null,
       meta: null,
     });
   } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: null,
-      error: {
-        code: "AUTHORIZE_HANDOVER_ERROR",
-        message: safeErrorMessage(err, "Handover could not be authorized"),
+    return NextResponse.json(
+      {
+        success: false,
+        status_code: 500,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "AUTHORIZE_HANDOVER_ERROR",
+          message: safeErrorMessage(err, "Handover could not be authorized"),
+        },
+        meta: null,
       },
-      meta: null,
-    }, { status: 500 });
+      { status: 500 }
+    );
   }
 }

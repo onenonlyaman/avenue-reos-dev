@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
@@ -23,7 +22,10 @@ export async function GET(request: NextRequest) {
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM ai_construction_safety WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
+      SELECT * FROM ai_construction_safety
+      WHERE tenant_id = ${auth.user.tenantId}::uuid
+      ORDER BY created_at DESC
+      LIMIT 100
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -61,5 +63,80 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
 
+  try {
+    const tenantId = auth.user.tenantId;
+    const body = await request.json();
 
+    const {
+      cameraLocation,
+      incidentType,
+      riskSeverity = "MODERATE",
+      laborCount = 0,
+      projectedScheduleDelayDays = 0,
+    } = body;
+
+    if (!cameraLocation || !incidentType) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "VALIDATION_ERROR", message: "Camera location and incident type are required." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const inserted = await prisma.$queryRaw<any[]>`
+      INSERT INTO ai_construction_safety (
+        tenant_id, camera_location, incident_type, risk_severity, labor_count, projected_schedule_delay_days
+      ) VALUES (
+        ${tenantId}::uuid,
+        ${cameraLocation.trim()},
+        ${incidentType.trim()},
+        ${riskSeverity.trim().toUpperCase()},
+        ${Number(laborCount) || 0},
+        ${Number(projectedScheduleDelayDays) || 0}
+      )
+      RETURNING *
+    `;
+
+    const r = inserted[0];
+    const mapped = {
+      id: r.id,
+      cameraLocation: r.camera_location,
+      incidentType: r.incident_type,
+      riskSeverity: r.risk_severity,
+      laborCount: Number(r.labor_count || 0),
+      projectedScheduleDelayDays: Number(r.projected_schedule_delay_days || 0),
+      timestamp: r.timestamp,
+    };
+
+    return NextResponse.json({
+      success: true,
+      status_code: 201,
+      timestamp: new Date().toISOString(),
+      request_id: `req-${Date.now()}`,
+      data: mapped,
+      error: null,
+      meta: null,
+    }, { status: 201 });
+  } catch (err: unknown) {
+    return NextResponse.json({
+      success: false,
+      status_code: 500,
+      timestamp: new Date().toISOString(),
+      request_id: `req-${Date.now()}`,
+      data: null,
+      error: {
+        code: "CONSTRUCTION_SAFETY_CREATE_ERROR",
+        message: safeErrorMessage(err, "Construction safety observation could not be recorded"),
+      },
+      meta: null,
+    }, { status: 500 });
+  }
+}

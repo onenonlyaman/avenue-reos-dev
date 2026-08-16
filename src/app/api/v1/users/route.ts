@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { envelope, requireAdmin } from "@/lib/apiAccess";
-import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { ROLE_PERMISSIONS, findRoleRule } from "@/lib/permissions";
 import { checkPasswordPolicy, hashPassword } from "@/lib/password";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
   const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const role = typeof body.role === "string" ? body.role.trim() : "";
+  const rawRole = typeof body.role === "string" ? body.role.trim() : "";
   const department = typeof body.department === "string" && body.department.trim()
     ? body.department.trim()
     : "Operations";
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     ? body.siteLocation.trim()
     : "Nashik Corporate Office";
 
-  if (!fullName || !email || !role) {
+  if (!fullName || !email || !rawRole) {
     return envelope(400, {
       error: { code: "MISSING_FIELDS", message: "Full name, email and role are required." },
     });
@@ -105,14 +105,16 @@ export async function POST(request: NextRequest) {
     return envelope(400, { error: { code: "INVALID_EMAIL", message: "Enter a valid email address." } });
   }
 
-  if (!Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, role)) {
+  const matchedRule = findRoleRule(rawRole);
+  if (!matchedRule) {
     return envelope(400, {
       error: {
         code: "UNKNOWN_ROLE",
-        message: `"${role}" is not a role defined by this platform.`,
+        message: `"${rawRole}" is not a role defined by this platform.`,
       },
     });
   }
+  const role = matchedRule.roleName;
 
   const policy = checkPasswordPolicy(body.initialPassword);
   if (!policy.valid) {

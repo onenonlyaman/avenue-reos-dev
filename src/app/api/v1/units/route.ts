@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export interface BlueprintSlotConfig {
@@ -24,7 +23,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const whereClause: { tenantId: string; projectId?: string; towerName?: string; project?: { projectName: string } } = {
-      tenantId: ACTIVE_TENANT_ID,
+      tenantId: auth.user.tenantId,
     };
     if (projectId) whereClause.projectId = projectId;
     if (towerName) whereClause.towerName = towerName;
@@ -140,11 +139,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const targetProjectId = projectId;
+    const tenantId = auth.user.tenantId;
 
-    if (isBatch && Array.isArray(blueprint) && blueprint.length > 0) {
+    if (isBatch) {
       const floors = Number(maxFloors) || 0;
       const floorRiseStep = Number(floorRisePerFloor) || 0;
       const tower = towerName;
+
+      const slots: BlueprintSlotConfig[] = Array.isArray(blueprint) && blueprint.length > 0
+        ? (blueprint as BlueprintSlotConfig[])
+        : Array.from({ length: Number(unitsPerFloor) || 1 }, (_, i) => ({
+            slot_number: i + 1,
+            typology: body.unitType || "2 BHK Luxury Apartment",
+            carpet_sqft: Number(body.carpetAreaSqFt) || 1000,
+            balcony_sqft: Number(body.balconySqft) || 0,
+            base_rate_sqft: Number(body.baseRatePerSqFt) || 5000,
+            facing_direction: body.facingDirection || "East (Garden)",
+            parking_bays: body.parkingBays || "1 Covered Bay",
+          }));
 
       const unitsData = [];
       let totalEstRev = 0;
@@ -152,19 +164,19 @@ export async function POST(request: NextRequest) {
       for (let f = 1; f <= floors; f++) {
         const floorRise = (f - 1) * floorRiseStep;
 
-        for (const slot of blueprint as BlueprintSlotConfig[]) {
+        for (const slot of slots) {
           const slotPad = slot.slot_number.toString().padStart(2, "0");
           const unitCode = `${f}${slotPad}`;
           const totalPrice = slot.carpet_sqft * slot.base_rate_sqft + floorRise;
           totalEstRev += totalPrice;
 
           unitsData.push({
-            tenantId: ACTIVE_TENANT_ID,
+            tenantId,
             projectId: targetProjectId,
             unitNumber: unitCode,
             towerName: tower,
             floorNumber: f,
-            unitType: slot.typology,
+            unitType: "APARTMENT",
             carpetAreaSqft: slot.carpet_sqft,
             basePrice: totalPrice,
             status: "AVAILABLE",
@@ -173,7 +185,7 @@ export async function POST(request: NextRequest) {
             floorRiseCharge: floorRise,
             facingDirection: slot.facing_direction,
             parkingBays: slot.parking_bays,
-            reraDetails: body.reraDetails || "",
+            reraDetails: body.reraDetails || "Includes statutory structural warranty, fire safety compliance certification, and EV charging slot allocation.",
           });
         }
       }
@@ -198,7 +210,7 @@ export async function POST(request: NextRequest) {
 
     const { unitNumber, floorNumber, unitType, price, carpetAreaSqFt, balconySqft, facingDirection, parkingBays, reraDetails } = body;
 
-    if (!unitNumber || !floorNumber || !unitType || !carpetAreaSqFt || !price) {
+    if (!unitNumber || !floorNumber || !carpetAreaSqFt || !price) {
       return NextResponse.json({
         success: false,
         status_code: 400,
@@ -207,28 +219,28 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "INCOMPLETE_UNIT_RECORD",
-          message: "Unit number, floor, typology, carpet area and base price are required",
+          message: "Unit number, floor, carpet area and base price are required",
         },
       }, { status: 400 });
     }
 
     const createdSingle = await prisma.masterUnit.create({
       data: {
-        tenantId: ACTIVE_TENANT_ID,
+        tenantId,
         projectId: targetProjectId,
         unitNumber,
         towerName,
         floorNumber: Number(floorNumber),
-        unitType,
+        unitType: "APARTMENT",
         carpetAreaSqft: Number(carpetAreaSqFt),
         basePrice: Number(price),
         status: "AVAILABLE",
-        typology: unitType,
+        typology: unitType || "2 BHK Luxury Apartment",
         balconySqft: Number(balconySqft) || 0,
         floorRiseCharge: 0,
-        facingDirection: facingDirection || "",
-        parkingBays: parkingBays || "",
-        reraDetails: reraDetails || "",
+        facingDirection: facingDirection || "East (Garden)",
+        parkingBays: parkingBays || "1 Covered Bay",
+        reraDetails: reraDetails || "Includes statutory structural warranty, fire safety compliance certification, and EV charging slot allocation.",
       },
     });
 

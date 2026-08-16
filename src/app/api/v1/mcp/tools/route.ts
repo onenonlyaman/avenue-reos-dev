@@ -1,30 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { prisma } from "@/lib/db";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { ensureMcpSchema } from "@/lib/mcp/ensureMcpSchema";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId;
+
   try {
-    await runtimeDdl("table:mcp_registered_tools", () => prisma.$executeRaw`
-      CREATE TABLE IF NOT EXISTS mcp_registered_tools (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id UUID NOT NULL,
-        tool_name VARCHAR(100) UNIQUE NOT NULL,
-        target_module VARCHAR(100) NOT NULL,
-        description TEXT NOT NULL,
-        is_mutative BOOLEAN NOT NULL DEFAULT false,
-        requires_hitl BOOLEAN NOT NULL DEFAULT false,
-        execution_count INT NOT NULL DEFAULT 0,
-        schema_input TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
+    await ensureMcpSchema(tenantId);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM mcp_registered_tools WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY tool_name ASC
+      SELECT id, tool_name, target_module, description, is_mutative, requires_hitl, execution_count, schema_input
+      FROM mcp_registered_tools
+      WHERE tenant_id = ${tenantId}::uuid
+      ORDER BY tool_name ASC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -63,5 +55,95 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function POST(request: NextRequest) {
+  const auth = await requireApiAccess(request);
+  if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId;
 
+  try {
+    await ensureMcpSchema(tenantId);
+    const body = await request.json();
+
+    const {
+      toolName,
+      targetModule,
+      description,
+      isMutative = false,
+      requiresHitl = false,
+      schemaInput,
+    } = body;
+
+    if (!toolName || !targetModule || !description) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "VALIDATION_ERROR", message: "Tool name, target module, and description are required." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const jsonSchema = typeof schemaInput === "object" ? JSON.stringify(schemaInput) : (schemaInput || "{}");
+
+    const inserted = await prisma.$queryRaw<any[]>`
+      INSERT INTO mcp_registered_tools (
+        tenant_id, tool_name, target_module, description, is_mutative, requires_hitl, execution_count, schema_input
+      ) VALUES (
+        ${tenantId}::uuid,
+        ${toolName.trim()},
+        ${targetModule.trim()},
+        ${description.trim()},
+        ${Boolean(isMutative)},
+        ${Boolean(requiresHitl)},
+        0,
+        ${jsonSchema}::jsonb
+      )
+      ON CONFLICT (tenant_id, tool_name) 
+      DO UPDATE SET 
+        target_module = EXCLUDED.target_module,
+        description = EXCLUDED.description,
+        is_mutative = EXCLUDED.is_mutative,
+        requires_hitl = EXCLUDED.requires_hitl,
+        schema_input = EXCLUDED.schema_input
+      RETURNING *
+    `;
+
+    const r = inserted[0];
+    const mapped = {
+      id: r.id,
+      toolName: r.tool_name,
+      targetModule: r.target_module,
+      description: r.description,
+      isMutative: Boolean(r.is_mutative),
+      requiresHitl: Boolean(r.requires_hitl),
+      executionCount: Number(r.execution_count || 0),
+      schemaInput: r.schema_input,
+    };
+
+    return NextResponse.json({
+      success: true,
+      status_code: 201,
+      timestamp: new Date().toISOString(),
+      request_id: `req-${Date.now()}`,
+      data: mapped,
+      error: null,
+      meta: null,
+    }, { status: 201 });
+  } catch (err: unknown) {
+    return NextResponse.json({
+      success: false,
+      status_code: 500,
+      timestamp: new Date().toISOString(),
+      request_id: `req-${Date.now()}`,
+      data: null,
+      error: {
+        code: "MCP_TOOL_REGISTER_ERROR",
+        message: safeErrorMessage(err, "MCP Tool could not be registered"),
+      },
+      meta: null,
+    }, { status: 500 });
+  }
+}

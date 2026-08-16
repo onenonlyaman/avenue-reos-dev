@@ -38,19 +38,31 @@ export function FinancialOverviewView() {
     );
   }
 
-  if (error || !data) {
+  if (error) {
     return (
       <CorporateEmptyState
-        title="No General Ledger Transactions Found"
-        description={error || "No journal vouchers or budget allocations on record."}
-        actionLabel="Refresh Ledger Connection"
+        title="Financial Overview Unavailable"
+        description={error}
+        actionLabel="Retry Ledger Connection"
         onAction={fetchOverview}
         icon={AlertCircle}
       />
     );
   }
 
-  const escrowSum = 42.80;
+  if (!data) {
+    return (
+      <CorporateEmptyState
+        title="No General Ledger Data"
+        description="No financial metrics or budget allocations found on record."
+        actionLabel="Refresh Overview"
+        onAction={fetchOverview}
+        icon={AlertCircle}
+      />
+    );
+  }
+
+  const escrowSum = data.cashInEscrowCr;
   const cashPositionTotal = escrowSum + data.operationalCashCr;
 
   return (
@@ -124,7 +136,7 @@ export function FinancialOverviewView() {
                   ₹{data.quarterlyBudgetCommittedCr.toFixed(2)} Cr (
                   {data.quarterlyBudgetAllocatedCr > 0
                     ? ((data.quarterlyBudgetCommittedCr / data.quarterlyBudgetAllocatedCr) * 100).toFixed(1)
-                    : 0}
+                    : "0.0"}
                   %)
                 </span>
               </div>
@@ -149,7 +161,7 @@ export function FinancialOverviewView() {
                   ₹{data.quarterlyBudgetDisbursedCr.toFixed(2)} Cr (
                   {data.quarterlyBudgetAllocatedCr > 0
                     ? ((data.quarterlyBudgetDisbursedCr / data.quarterlyBudgetAllocatedCr) * 100).toFixed(1)
-                    : 0}
+                    : "0.0"}
                   %)
                 </span>
               </div>
@@ -188,18 +200,18 @@ export function FinancialOverviewView() {
             </div>
 
             <div className="space-y-2 pt-2 border-t border-border">
-              <div className="flex justify-between text-muted-foreground">
-                <span>Gangapur Road Project Escrow</span>
-                <span className="font-mono text-foreground font-semibold">₹18.40 Cr</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Indira Nagar Project Escrow</span>
-                <span className="font-mono text-foreground font-semibold">₹14.20 Cr</span>
-              </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>Pathardi Phata Project Escrow</span>
-                <span className="font-mono text-foreground font-semibold">₹10.20 Cr</span>
-              </div>
+              {data.projectEscrows && data.projectEscrows.length > 0 ? (
+                data.projectEscrows.map((proj) => (
+                  <div key={proj.id} className="flex justify-between text-muted-foreground">
+                    <span>{proj.projectName} ({proj.location})</span>
+                    <span className="font-mono text-foreground font-semibold">₹{proj.escrowCr.toFixed(2)} Cr</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-muted-foreground text-[11px] py-1">
+                  Escrow accounts linked to registered master developments.
+                </div>
+              )}
             </div>
           </div>
         </div>

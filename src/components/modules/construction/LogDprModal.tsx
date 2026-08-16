@@ -26,43 +26,68 @@ export function LogDprModal({
   selectedProject,
   onDprLogged,
 }: LogDprModalProps) {
-  const [projectId, setProjectId] = useState<string>(selectedProject || (projects[0]?.name || ""));
+  const activeProjects = projects.filter((p) => p.id !== "all");
+  const initialProjectId = projects.find((p) => p.name === selectedProject && p.id !== "all")?.id || activeProjects[0]?.id || "";
+
+  const [projectId, setProjectId] = useState<string>(initialProjectId);
   const [reportDate, setReportDate] = useState<string>(new Date().toISOString().split("T")[0]);
-  const [supervisingEngineer, setSupervisingEngineer] = useState<string>("Er. Rajesh Sharma");
-  const [skilledLaborCount, setSkilledLaborCount] = useState<number | "">(42);
-  const [unskilledLaborCount, setUnskilledLaborCount] = useState<number | "">(65);
-  const [equipmentHours, setEquipmentHours] = useState<number | "">(14);
-  const [cementBags, setCementBags] = useState<number | "">(450);
-  const [steelMt, setSteelMt] = useState<number | "">(18.5);
-  const [concreteM3, setConcreteM3] = useState<number | "">(120);
-  const [workDetails, setWorkDetails] = useState<string>("Tower A 9th floor slab concrete pouring completed with high-frequency vibrators.");
-  const [physicalProgressPct, setPhysicalProgressPct] = useState<number | "">(2.5);
+  const [supervisingEngineer, setSupervisingEngineer] = useState<string>("");
+  const [skilledLaborCount, setSkilledLaborCount] = useState<number | "">("");
+  const [unskilledLaborCount, setUnskilledLaborCount] = useState<number | "">("");
+  const [equipmentHours, setEquipmentHours] = useState<number | "">("");
+  const [cementBags, setCementBags] = useState<number | "">("");
+  const [steelMt, setSteelMt] = useState<number | "">( "");
+  const [concreteM3, setConcreteM3] = useState<number | "">("");
+  const [workDetails, setWorkDetails] = useState<string>("");
+  const [physicalProgressPct, setPhysicalProgressPct] = useState<number | "">("");
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      const match = projects.find((p) => p.name === selectedProject && p.id !== "all");
+      setProjectId(match ? match.id : (activeProjects[0]?.id || ""));
+      setError(null);
+    }
+  }, [isOpen, selectedProject, projects]);
 
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
       setError(null);
 
+      if (!projectId) throw new Error("Please select a construction development site.");
+      if (!reportDate) throw new Error("Please select a shift report date.");
+      if (!supervisingEngineer.trim()) throw new Error("Please enter the supervising site engineer name.");
+      if (!workDetails.trim()) throw new Error("Please enter the shift work description.");
+
       const payload: CreateDprPayload = {
-        projectId: projectId || selectedProject || projects[0]?.name || "Avenue Horizon - Gangapur Road",
+        projectId,
         reportDate,
-        supervisingEngineer,
-        skilledLaborCount: typeof skilledLaborCount === "number" ? skilledLaborCount : 0,
-        unskilledLaborCount: typeof unskilledLaborCount === "number" ? unskilledLaborCount : 0,
-        equipmentHours: typeof equipmentHours === "number" ? equipmentHours : 0,
-        cementBags: typeof cementBags === "number" ? cementBags : 0,
-        steelMt: typeof steelMt === "number" ? steelMt : 0,
-        concreteM3: typeof concreteM3 === "number" ? concreteM3 : 0,
-        workDetails,
-        physicalProgressPct: typeof physicalProgressPct === "number" ? physicalProgressPct : 0,
+        supervisingEngineer: supervisingEngineer.trim(),
+        skilledLaborCount: typeof skilledLaborCount === "number" ? Math.max(0, skilledLaborCount) : 0,
+        unskilledLaborCount: typeof unskilledLaborCount === "number" ? Math.max(0, unskilledLaborCount) : 0,
+        equipmentHours: typeof equipmentHours === "number" ? Math.max(0, equipmentHours) : 0,
+        cementBags: typeof cementBags === "number" ? Math.max(0, cementBags) : 0,
+        steelMt: typeof steelMt === "number" ? Math.max(0, steelMt) : 0,
+        concreteM3: typeof concreteM3 === "number" ? Math.max(0, concreteM3) : 0,
+        workDetails: workDetails.trim(),
+        physicalProgressPct: typeof physicalProgressPct === "number" ? Math.max(0, Math.min(100, physicalProgressPct)) : 0,
       };
 
       const newLog = await constructionApi.createDprLog(payload);
       onDprLogged(newLog);
       onClose();
+      setSupervisingEngineer("");
+      setWorkDetails("");
+      setSkilledLaborCount("");
+      setUnskilledLaborCount("");
+      setEquipmentHours("");
+      setCementBags("");
+      setSteelMt("");
+      setConcreteM3("");
+      setPhysicalProgressPct("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Daily Progress Report could not be saved");
     } finally {
@@ -105,8 +130,8 @@ export function LogDprModal({
                   <SelectValue placeholder="Select Project" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.name}>
+                  {activeProjects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
                   ))}
@@ -130,6 +155,7 @@ export function LogDprModal({
             <Input
               value={supervisingEngineer}
               onChange={(e) => setSupervisingEngineer(e.target.value)}
+              placeholder="e.g. Rajesh Sharma"
               className="h-8 text-xs"
             />
           </div>
@@ -140,8 +166,9 @@ export function LogDprModal({
               <Input
                 type="number"
                 min="0"
+                placeholder="0"
                 value={skilledLaborCount}
-                onChange={(e) => setSkilledLaborCount(e.target.value ? parseInt(e.target.value) : "")}
+                onChange={(e) => setSkilledLaborCount(e.target.value ? parseInt(e.target.value, 10) : "")}
                 className="h-8 text-xs font-mono"
               />
             </div>
@@ -151,8 +178,9 @@ export function LogDprModal({
               <Input
                 type="number"
                 min="0"
+                placeholder="0"
                 value={unskilledLaborCount}
-                onChange={(e) => setUnskilledLaborCount(e.target.value ? parseInt(e.target.value) : "")}
+                onChange={(e) => setUnskilledLaborCount(e.target.value ? parseInt(e.target.value, 10) : "")}
                 className="h-8 text-xs font-mono"
               />
             </div>
@@ -162,6 +190,8 @@ export function LogDprModal({
               <Input
                 type="number"
                 min="0"
+                step="0.5"
+                placeholder="0"
                 value={equipmentHours}
                 onChange={(e) => setEquipmentHours(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono"
@@ -175,8 +205,9 @@ export function LogDprModal({
               <Input
                 type="number"
                 min="0"
+                placeholder="0"
                 value={cementBags}
-                onChange={(e) => setCementBags(e.target.value ? parseInt(e.target.value) : "")}
+                onChange={(e) => setCementBags(e.target.value ? parseInt(e.target.value, 10) : "")}
                 className="h-8 text-xs font-mono"
               />
             </div>
@@ -187,6 +218,7 @@ export function LogDprModal({
                 type="number"
                 min="0"
                 step="0.1"
+                placeholder="0.0"
                 value={steelMt}
                 onChange={(e) => setSteelMt(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono"
@@ -198,6 +230,8 @@ export function LogDprModal({
               <Input
                 type="number"
                 min="0"
+                step="0.5"
+                placeholder="0.0"
                 value={concreteM3}
                 onChange={(e) => setConcreteM3(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono"
@@ -211,6 +245,7 @@ export function LogDprModal({
               <Textarea
                 value={workDetails}
                 onChange={(e) => setWorkDetails(e.target.value)}
+                placeholder="Describe specific structural work, pour locations, testing completed..."
                 className="min-h-[70px] text-xs"
               />
             </div>
@@ -222,6 +257,7 @@ export function LogDprModal({
                 min="0"
                 max="100"
                 step="0.1"
+                placeholder="0.0"
                 value={physicalProgressPct}
                 onChange={(e) => setPhysicalProgressPct(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono"
@@ -249,3 +285,4 @@ export function LogDprModal({
     </Dialog>
   );
 }
+

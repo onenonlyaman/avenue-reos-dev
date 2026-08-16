@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { requireApiAccess, AuthenticatedContext, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
+
+  const { user } = auth as AuthenticatedContext;
+  const tenantId = user.tenantId;
 
   try {
     await runtimeDdl("table:communications_approvals", () => prisma.$executeRaw`
@@ -17,14 +19,18 @@ export async function GET(request: NextRequest) {
         issue_summary TEXT NOT NULL,
         claim_amount NUMERIC(15,2) NOT NULL DEFAULT 0,
         justification TEXT NOT NULL,
+        rejection_reason TEXT,
         status VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
         requires_hitl BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM communications_approvals WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND status = 'PENDING_APPROVAL' ORDER BY created_at DESC
+      SELECT * FROM communications_approvals
+      WHERE tenant_id = ${tenantId}::uuid AND status = 'PENDING_APPROVAL'
+      ORDER BY created_at DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -34,6 +40,7 @@ export async function GET(request: NextRequest) {
       issueSummary: r.issue_summary,
       claimAmount: Number(r.claim_amount || 0),
       justification: r.justification,
+      rejectionReason: r.rejection_reason || null,
       status: r.status,
       requiresHitl: Boolean(r.requires_hitl),
     }));
@@ -62,4 +69,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-

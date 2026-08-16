@@ -16,6 +16,13 @@ export interface ApiResponseEnvelope<T> {
   } | null;
 }
 
+export interface ProjectEscrowSummary {
+  id: string;
+  projectName: string;
+  location: string;
+  escrowCr: number;
+}
+
 export interface FinancialOverviewData {
   cashInEscrowCr: number;
   operationalCashCr: number;
@@ -25,6 +32,7 @@ export interface FinancialOverviewData {
   quarterlyBudgetAllocatedCr: number;
   quarterlyBudgetCommittedCr: number;
   quarterlyBudgetDisbursedCr: number;
+  projectEscrows: ProjectEscrowSummary[];
 }
 
 export interface LedgerEntry {

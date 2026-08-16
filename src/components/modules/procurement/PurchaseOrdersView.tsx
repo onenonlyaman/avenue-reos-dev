@@ -10,7 +10,12 @@ import { ShoppingCart, Clock, CheckCircle2, Truck, Plus, AlertCircle, Loader2 } 
 import { procurementApi, PurchaseOrder } from "@/services/procurementApi";
 import { CreatePoModal } from "./CreatePoModal";
 
-export function PurchaseOrdersView() {
+interface PurchaseOrdersViewProps {
+  refreshKey?: number;
+  onRefreshNeeded?: () => void;
+}
+
+export function PurchaseOrdersView({ refreshKey, onRefreshNeeded }: PurchaseOrdersViewProps) {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +36,7 @@ export function PurchaseOrdersView() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [refreshKey]);
 
   const totalPoValueLakhs = orders.reduce((sum, o) => sum + o.orderValueLakhs, 0);
   const pendingCount = orders.filter((o) => o.status === "PENDING_APPROVAL").length;
@@ -39,12 +44,17 @@ export function PurchaseOrdersView() {
   const totalCount = orders.length;
   const fulfillmentRate = totalCount > 0 ? Number(((approvedCount / totalCount) * 100).toFixed(0)) : 100;
 
+  const handleOrderCreated = () => {
+    loadData();
+    if (onRefreshNeeded) onRefreshNeeded();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border border-border shadow-xs">
         <div>
           <h3 className="text-sm font-bold font-heading text-foreground">
-            Material Requisitions & Purchase Orders
+            Material Requisitions & Purchase Orders Ledger
           </h3>
         </div>
 
@@ -118,7 +128,7 @@ export function PurchaseOrdersView() {
           icon={ShoppingCart}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -160,7 +170,12 @@ export function PurchaseOrdersView() {
                       {o.vendorName}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-muted-foreground">
-                      {o.materialDescription}
+                      <div>{o.materialDescription}</div>
+                      {o.status === "REJECTED" && o.rejectionReason && (
+                        <div className="text-[10px] text-rose-700 font-medium mt-0.5">
+                          Reason: {o.rejectionReason}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
                       ₹{o.orderValueLakhs.toFixed(2)} Lakhs
@@ -195,7 +210,7 @@ export function PurchaseOrdersView() {
       <CreatePoModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onOrderCreated={loadData}
+        onOrderCreated={handleOrderCreated}
       />
     </div>
   );

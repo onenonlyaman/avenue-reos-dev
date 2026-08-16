@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { KeyRound, CheckCircle2, ShieldCheck, Plus, AlertCircle, Loader2 } from "lucide-react";
+import { KeyRound, CheckCircle2, ShieldCheck, Plus, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { facilityApi, UnitHandover } from "@/services/facilityApi";
 import { ScheduleHandoverModal } from "./ScheduleHandoverModal";
 
@@ -34,7 +34,7 @@ export function HandoverPossessionView() {
   }, []);
 
   const readyCount = handovers.filter((h) => h.status === "READY_FOR_HANDOVER").length;
-  const inDesnaggingCount = handovers.filter((h) => h.status === "IN_DESNAGGING").length;
+  const inDesnaggingCount = handovers.filter((h) => h.status === "IN_DESNAGGING" || h.status === "PENDING_APPROVAL").length;
   const nocClearedCount = handovers.filter((h) => h.financialNocCleared).length;
   const handedOverCount = handovers.filter((h) => h.status === "HANDED_OVER").length;
 
@@ -45,16 +45,31 @@ export function HandoverPossessionView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Buyer Possession & De-Snagging Matrix
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Punch-list completion tracking and financial NOC verification before unit key handover
+          </p>
         </div>
 
-        <Button
-          size="sm"
-          className="h-9 text-xs gap-1.5 font-medium shrink-0"
-          onClick={() => setIsModalOpen(true)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Schedule Possession Inspection
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            className="h-8 text-xs gap-1.5 font-medium shrink-0"
+            onClick={() => setIsModalOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Schedule Possession Inspection
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1 font-medium"
+            onClick={loadData}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -68,18 +83,18 @@ export function HandoverPossessionView() {
         />
 
         <CorporateStatCard
-          label="Pending De-Snag Items"
+          label="In Active De-Snagging"
           value={`${inDesnaggingCount} Units`}
-          subtext="In active punch-list rectification"
+          subtext="Punch-list or approval pending"
           icon={AlertCircle}
-          trend={inDesnaggingCount > 0 ? "In Rectification" : "All Rectified"}
+          trend={inDesnaggingCount > 0 ? "Rectification Active" : "All Rectified"}
           trendDirection={inDesnaggingCount > 0 ? "neutral" : "up"}
         />
 
         <CorporateStatCard
           label="Financial NOC Clearances"
           value={`${nocClearedCount} Cleared`}
-          subtext="Finance ERP dues fully settled"
+          subtext="Finance dues fully settled"
           icon={ShieldCheck}
           trend="Ledger Settled"
           trendDirection="up"
@@ -88,7 +103,7 @@ export function HandoverPossessionView() {
         <CorporateStatCard
           label="Handed Over Units"
           value={`${handedOverCount} Completed`}
-          subtext="Keys formally handed to buyers"
+          subtext="Keys formally released"
           icon={CheckCircle2}
           trend="Completed"
           trendDirection="neutral"
@@ -148,22 +163,29 @@ export function HandoverPossessionView() {
                   statusText = "Handed Over";
                 }
 
+                const clampedPct = Math.max(0, Math.min(100, h.desnaggingCompletionPct));
+
                 return (
                   <TableRow key={h.id} className="hover:bg-muted/30 transition-colors">
                     <TableCell className="text-xs py-3 font-semibold text-foreground">
                       <div>{h.unitName}</div>
                       <span className="text-[10px] text-muted-foreground font-mono">Ref: {h.handoverReference}</span>
+                      {h.rejectionReason && (
+                        <div className="text-[10px] text-rose-700 font-normal mt-0.5">
+                          Note: {h.rejectionReason}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs py-3 font-medium text-foreground">
                       {h.buyerName}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center font-mono font-bold">
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-foreground">{h.desnaggingCompletionPct}%</span>
+                        <span className="text-foreground">{clampedPct}%</span>
                         <div className="h-1.5 w-24 bg-muted rounded-full overflow-hidden">
                           <div
-                            className="bg-primary h-full rounded-full"
-                            style={{ width: `${Math.min(100, h.desnaggingCompletionPct)}%` }}
+                            className="bg-primary h-full rounded-full transition-all"
+                            style={{ width: `${clampedPct}%` }}
                           />
                         </div>
                       </div>

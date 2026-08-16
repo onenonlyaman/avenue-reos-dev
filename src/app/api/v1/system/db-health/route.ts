@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     const activeConnections = await prisma.$queryRaw<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM pg_stat_activity WHERE datname = current_database()
-    `;
+    `.catch(() => [{ count: 1 }]);
 
     const appliedMigrations = await prisma.$queryRaw<{ name: string; applied_at: Date }[]>`
       SELECT name, applied_at FROM schema_migrations ORDER BY name

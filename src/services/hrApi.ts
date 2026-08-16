@@ -29,17 +29,35 @@ export interface Employee {
   joiningDate: string;
   corporateEmail: string;
   contactNumber: string;
+  basicSalary?: number;
+  allowances?: number;
 }
 
 export interface AttendanceRecord {
   id: string;
+  employeeId?: string;
   employeeName: string;
   siteLocation: string;
+  shiftDate?: string;
   checkInTime: string;
   checkOutTime: string;
   deviceStatus: "SYNCED" | "OFFLINE_QUEUED" | "MANUAL_ENTRY";
   overtimeHours: number;
   status: "PRESENT" | "LATE" | "ABSENT" | "HALF_DAY" | "ON_LEAVE";
+}
+
+export interface PayrollItem {
+  id?: string;
+  employeeName: string;
+  designation: string;
+  department: string;
+  basicSalary: number;
+  allowances: number;
+  grossSalary: number;
+  pfDeduction: number;
+  esicDeduction: number;
+  ptDeduction: number;
+  netSalary: number;
 }
 
 export interface PayrollRun {
@@ -54,6 +72,7 @@ export interface PayrollRun {
   status: "DRAFT" | "PENDING_APPROVAL" | "DISBURSED" | "REJECTED";
   requiresHitl: boolean;
   employeeCount: number;
+  items?: PayrollItem[];
 }
 
 export interface Candidate {
@@ -79,13 +98,16 @@ export interface PerformanceGoal {
 
 export interface HrApprovalItem {
   id: string;
-  type: "PAYROLL_RUN" | "EXIT_SETTLEMENT";
+  sourceId?: string;
+  type: "PAYROLL_RUN" | "EXIT_SETTLEMENT" | string;
   referenceName: string;
   amount: number;
   justification: string;
   requestedBy: string;
   status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
   requiresHitl: boolean;
+  rejectionReason?: string | null;
+  createdAt?: string;
 }
 
 const API_BASE = "/api/v1/hr";
@@ -136,14 +158,21 @@ export const hrApi = {
     });
   },
 
+  async recordLeave(payload: { employeeName: string; siteLocation?: string; reason?: string }): Promise<{ success: boolean }> {
+    return fetchEnvelope<{ success: boolean }>(`${API_BASE}/attendance`, {
+      method: "POST",
+      body: JSON.stringify({ action: "RECORD_LEAVE", ...payload }),
+    });
+  },
+
   async getPayroll(): Promise<PayrollRun | null> {
     return fetchEnvelope<PayrollRun | null>(`${API_BASE}/payroll`, undefined, true);
   },
 
-  async processPayrollRun(payload: { cycleMonth: string; totalGrossSalary: number; netPayable: number }): Promise<PayrollRun> {
+  async processPayrollRun(payload?: { cycleMonth?: string }): Promise<PayrollRun> {
     return fetchEnvelope<PayrollRun>(`${API_BASE}/payroll`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payload || {}),
     });
   },
 
@@ -155,6 +184,13 @@ export const hrApi = {
     return fetchEnvelope<Candidate>(`${API_BASE}/recruitment`, {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  },
+
+  async advanceCandidate(id: string, currentStage: string, interviewScore?: number): Promise<Candidate> {
+    return fetchEnvelope<Candidate>(`${API_BASE}/recruitment`, {
+      method: "PATCH",
+      body: JSON.stringify({ id, currentStage, interviewScore }),
     });
   },
 

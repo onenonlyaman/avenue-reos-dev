@@ -39,6 +39,9 @@ export function LiquidityCashflowView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Liquidity Forecast & Debt Service Coverage Ratio (DSCR)
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Quarterly cash flow realizations, contractor disbursements, and debt solvency index.
+          </p>
         </div>
 
         <Button
@@ -74,57 +77,59 @@ export function LiquidityCashflowView() {
         />
       ) : (
         <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted/40">
-              <TableRow>
-                <TableHead className="text-xs font-semibold">Operating Period</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Customer Inflows (₹ L)</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Vendor Outflows (₹ L)</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Debt Service (₹ L)</TableHead>
-                <TableHead className="text-xs font-semibold text-right">Net Operating Cash Flow (₹ L)</TableHead>
-                <TableHead className="text-xs font-semibold text-center">DSCR Ratio</TableHead>
-                <TableHead className="text-xs font-semibold text-center">Solvency Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((e) => {
-                let badgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-300";
-                if (e.solvencyStatus === "Debt Caution") {
-                  badgeStyle = "bg-amber-100 text-amber-800 border-amber-300";
-                } else if (e.solvencyStatus === "Liquidity Risk") {
-                  badgeStyle = "bg-rose-100 text-rose-800 border-rose-300";
-                }
+          <div className="overflow-x-auto">
+            <Table className="min-w-[760px]">
+              <TableHeader className="bg-muted/40">
+                <TableRow>
+                  <TableHead className="text-xs font-semibold">Operating Period</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Customer Inflows (₹ L)</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Vendor Outflows (₹ L)</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Debt Service (₹ L)</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Net Operating Cash Flow (₹ L)</TableHead>
+                  <TableHead className="text-xs font-semibold text-center">DSCR Ratio</TableHead>
+                  <TableHead className="text-xs font-semibold text-center">Solvency Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {entries.map((e) => {
+                  let badgeStyle = "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30";
+                  if (e.solvencyStatus === "Debt Caution") {
+                    badgeStyle = "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30";
+                  } else if (e.solvencyStatus === "Liquidity Risk") {
+                    badgeStyle = "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30";
+                  }
 
-                return (
-                  <TableRow key={e.id} className="hover:bg-muted/30 transition-colors">
-                    <TableCell className="text-xs py-3 font-semibold text-foreground">
-                      {e.operatingPeriod}
-                    </TableCell>
-                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-emerald-800">
-                      ₹{e.customerInflowsLakhs.toLocaleString("en-IN")} L
-                    </TableCell>
-                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-rose-800">
-                      ₹{e.vendorOutflowsLakhs.toLocaleString("en-IN")} L
-                    </TableCell>
-                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
-                      ₹{e.debtServiceLakhs.toLocaleString("en-IN")} L
-                    </TableCell>
-                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-primary text-sm">
-                      ₹{e.netOperatingCashflowLakhs.toLocaleString("en-IN")} L
-                    </TableCell>
-                    <TableCell className="text-xs py-3 text-center font-mono font-extrabold text-foreground">
-                      {e.dscrRatio}x
-                    </TableCell>
-                    <TableCell className="text-xs py-3 text-center">
-                      <Badge variant="outline" className={`text-[10px] font-bold ${badgeStyle}`}>
-                        {e.solvencyStatus}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                  return (
+                    <TableRow key={e.id} className="hover:bg-muted/30 transition-colors">
+                      <TableCell className="text-xs py-3 font-semibold text-foreground">
+                        {e.operatingPeriod}
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-right font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                        ₹{e.customerInflowsLakhs.toLocaleString("en-IN")} L
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-right font-mono font-bold text-rose-700 dark:text-rose-400">
+                        ₹{e.vendorOutflowsLakhs.toLocaleString("en-IN")} L
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
+                        {e.debtServiceLakhs > 0 ? `₹${e.debtServiceLakhs.toLocaleString("en-IN")} L` : "₹0 L (Debt Free)"}
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-right font-mono font-bold text-primary text-sm">
+                        ₹{e.netOperatingCashflowLakhs.toLocaleString("en-IN")} L
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-center font-mono font-extrabold text-foreground">
+                        {e.debtServiceLakhs > 0 ? `${e.dscrRatio}x` : "Unleveraged"}
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-center">
+                        <Badge variant="outline" className={`text-[10px] font-bold ${badgeStyle}`}>
+                          {e.solvencyStatus}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
 

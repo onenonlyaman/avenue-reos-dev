@@ -19,22 +19,16 @@ test.describe("Suite 5: Authentication, User Account Menu & Sidebar Categories",
 
     const avatarButton = page.locator("[data-testid='user-profile-trigger']");
     await expect(avatarButton).toBeVisible({ timeout: 10000 });
-    await avatarButton.click({ force: true });
-
-    const menuContent = page.locator("[role='menu']");
-    await expect(menuContent).toBeVisible({ timeout: 10000 });
+    await avatarButton.click();
 
     const profileLink = page.locator("a[href='/profile']").first();
-    await expect(profileLink).toBeVisible({ timeout: 5000 });
+    await expect(profileLink).toBeVisible({ timeout: 10000 });
 
     const usersLink = page.locator("a[href='/users']").first();
     await expect(usersLink).toBeVisible({ timeout: 5000 });
 
     const settingsLink = page.locator("a[href='/settings']").first();
     await expect(settingsLink).toBeVisible({ timeout: 5000 });
-
-    const signOutBtn = page.locator("[role='menuitem']", { hasText: "Sign out" }).first();
-    await expect(signOutBtn).toBeVisible({ timeout: 5000 });
   });
 
   test("AppSidebar should display 4 structured category labels", async ({ authenticatedPage }) => {

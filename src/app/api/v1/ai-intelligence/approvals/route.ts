@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
@@ -15,16 +14,23 @@ export async function GET(request: NextRequest) {
         title VARCHAR(255) NOT NULL,
         category VARCHAR(100) NOT NULL,
         target_reference VARCHAR(255) NOT NULL,
+        target_id UUID,
         amount NUMERIC(15,2) NOT NULL DEFAULT 0,
         justification TEXT NOT NULL,
         status VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
         requires_hitl BOOLEAN NOT NULL DEFAULT true,
+        rejection_reason TEXT,
+        approved_by VARCHAR(255),
+        reviewed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM ai_intelligence_approvals WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND status = 'PENDING_APPROVAL' ORDER BY created_at DESC
+      SELECT * FROM ai_intelligence_approvals
+      WHERE tenant_id = ${auth.user.tenantId}::uuid AND status = 'PENDING_APPROVAL'
+      ORDER BY created_at DESC
+      LIMIT 100
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -32,10 +38,14 @@ export async function GET(request: NextRequest) {
       title: r.title,
       category: r.category,
       targetReference: r.target_reference,
+      targetId: r.target_id || null,
       amount: Number(r.amount || 0),
       justification: r.justification,
       status: r.status,
       requiresHitl: Boolean(r.requires_hitl),
+      rejectionReason: r.rejection_reason || null,
+      approvedBy: r.approved_by || null,
+      reviewedAt: r.reviewed_at || null,
     }));
 
     return NextResponse.json({
@@ -62,4 +72,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-

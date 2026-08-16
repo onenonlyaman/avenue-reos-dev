@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
@@ -8,6 +7,8 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const tenantId = auth.user.tenantId;
+
     await runtimeDdl("table:integration_logs", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS integration_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM integration_logs WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC LIMIT 50
+      SELECT * FROM integration_logs WHERE tenant_id = ${tenantId}::uuid ORDER BY created_at DESC LIMIT 100
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -59,6 +60,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-

@@ -26,7 +26,10 @@ export function RaBillSubmissionModal({
   selectedProject,
   onBillSubmitted,
 }: RaBillSubmissionModalProps) {
-  const [projectId, setProjectId] = useState<string>(selectedProject || "");
+  const activeProjects = projects.filter((p) => p.id !== "all");
+  const initialProjectId = projects.find((p) => p.name === selectedProject && p.id !== "all")?.id || activeProjects[0]?.id || "";
+
+  const [projectId, setProjectId] = useState<string>(initialProjectId);
   const [contractorName, setContractorName] = useState<string>("");
   const [wbsPhase, setWbsPhase] = useState<string>("");
   const [grossClaimLakhs, setGrossClaimLakhs] = useState<number | "">("");
@@ -42,20 +45,25 @@ export function RaBillSubmissionModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    const match = projects.find((p) => p.name === selectedProject && p.id !== "all");
+    const currentProjId = match ? match.id : (activeProjects[0]?.id || "");
+    setProjectId(currentProjId);
+    setError(null);
+  }, [isOpen, selectedProject, projects]);
+
+  useEffect(() => {
+    if (!isOpen || !projectId) return;
     const load = async () => {
       try {
         setIsLoadingOptions(true);
         setOptionsError(null);
-        const query = projectId && projectId !== "All Nashik Developments"
-          ? `?projectId=${encodeURIComponent(projectId)}`
-          : "";
-        const res = await fetch(`/api/v1/construction/form-options${query}`);
+        const res = await fetch(`/api/v1/construction/form-options?projectId=${encodeURIComponent(projectId)}`);
         const json = await res.json();
         if (!json.success) throw new Error(json.error?.message || "Selection options could not be loaded");
         setWbsPhases(json.data.wbsPhases || []);
         setContractorNames(json.data.contractorNames || []);
-        if (!wbsPhase && json.data.wbsPhases?.length > 0) setWbsPhase(json.data.wbsPhases[0]);
-        if (!contractorName && json.data.contractorNames?.length > 0) setContractorName(json.data.contractorNames[0]);
+        if (json.data.wbsPhases?.length > 0) setWbsPhase(json.data.wbsPhases[0]);
+        if (json.data.contractorNames?.length > 0) setContractorName(json.data.contractorNames[0]);
       } catch (err: unknown) {
         setOptionsError(err instanceof Error ? err.message : "Contractors and work phases could not be loaded");
       } finally {
@@ -64,6 +72,7 @@ export function RaBillSubmissionModal({
     };
     load();
   }, [isOpen, projectId]);
+
 
   const claimVal = typeof grossClaimLakhs === "number" ? grossClaimLakhs * 100000 : 0;
   const holdbackVal = claimVal * 0.05;
@@ -136,8 +145,8 @@ export function RaBillSubmissionModal({
                   <SelectValue placeholder="Select Project" />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.name}>
+                  {activeProjects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
                   ))}

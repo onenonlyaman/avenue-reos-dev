@@ -1,25 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { LAKH_IN_RUPEES } from "@/lib/governance";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 async function ensureWarehouseInventoryRegister() {
-  await runtimeDdl("table:warehouse_inventory", () => prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS warehouse_inventory (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      tenant_id UUID NOT NULL,
-      category VARCHAR(100) NOT NULL,
-      item_description VARCHAR(255) NOT NULL,
-      storage_location VARCHAR(255) NOT NULL,
-      available_quantity NUMERIC(15,2) NOT NULL DEFAULT 0,
-      unit_of_measure VARCHAR(50) NOT NULL DEFAULT 'Units',
-      reorder_level NUMERIC(15,2) NOT NULL DEFAULT 0,
-      unit_cost NUMERIC(15,2) NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+  await runtimeDdl("table:warehouse_inventory", async () => {
+    await prisma.$executeRaw`
+      CREATE TABLE IF NOT EXISTS warehouse_inventory (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        item_description VARCHAR(255) NOT NULL,
+        storage_location VARCHAR(255) NOT NULL,
+        available_quantity NUMERIC(15,2) NOT NULL DEFAULT 0,
+        unit_of_measure VARCHAR(50) NOT NULL DEFAULT 'Units',
+        reorder_level NUMERIC(15,2) NOT NULL DEFAULT 0,
+        unit_cost NUMERIC(15,2) NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await prisma.$executeRaw`
+      CREATE INDEX IF NOT EXISTS idx_inventory_tenant_category ON warehouse_inventory (tenant_id, category)
+    `;
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -27,30 +31,29 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    await ensureWarehouseInventoryRegister();
+    const tenantId = auth.user.tenantId;
     const invModel = (prisma as any).warehouseInventory;
     let items: any[] = [];
 
     if (invModel?.findMany) {
       items = await invModel.findMany({
-        where: { tenantId: ACTIVE_TENANT_ID },
+        where: { tenantId },
         orderBy: { itemDescription: "asc" },
       });
     } else {
-      try {
-        await ensureWarehouseInventoryRegister();
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM warehouse_inventory WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY item_description ASC
-        `;
-        items = raw || [];
-      } catch {
-        items = [];
-      }
+      const raw = await prisma.$queryRaw<any[]>`
+        SELECT * FROM warehouse_inventory 
+        WHERE tenant_id = ${tenantId}::uuid 
+        ORDER BY item_description ASC
+      `;
+      items = raw || [];
     }
 
     const mapped = items.map((i: any) => {
-      const avail = Number(i.availableQuantity ?? i.available_quantity ?? 0);
-      const reorder = Number(i.reorderLevel ?? i.reorder_level ?? 0);
-      const unitCost = Number(i.unitCost ?? i.unit_cost ?? 0);
+      const avail = Math.max(0, Number(i.availableQuantity ?? i.available_quantity ?? 0));
+      const reorder = Math.max(0, Number(i.reorderLevel ?? i.reorder_level ?? 0));
+      const unitCost = Math.max(0, Number(i.unitCost ?? i.unit_cost ?? 0));
       const valuationAmount = avail * unitCost;
 
       let status: "Optimal" | "Reorder Required" | "Out of Stock" = "Optimal";
@@ -102,8 +105,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { category, itemDescription, storageLocation, availableQuantity, unitOfMeasure, reorderLevel, unitCost } =
-      body;
+    const { category, itemDescription, storageLocation, availableQuantity, unitOfMeasure, reorderLevel, unitCost } = body;
+    const tenantId = auth.user.tenantId;
 
     if (!category || !itemDescription || !storageLocation) {
       return NextResponse.json({
@@ -114,27 +117,49 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "INCOMPLETE_INVENTORY_RECORD",
-          message: "Material category, description and storage location are required",
+          message: "Material category, description and storage location are required.",
         },
         meta: null,
       }, { status: 400 });
     }
 
+    const avail = Math.max(0, Number(availableQuantity) || 0);
+    const reorder = Math.max(0, Number(reorderLevel) || 0);
+    const cost = Math.max(0, Number(unitCost) || 0);
+    const uom = unitOfMeasure?.trim() || "Units";
+
     await ensureWarehouseInventoryRegister();
 
-    const inserted = await prisma.$queryRaw<any[]>`
-      INSERT INTO warehouse_inventory (
-        tenant_id, category, item_description, storage_location,
-        available_quantity, unit_of_measure, reorder_level, unit_cost
-      ) VALUES (
-        ${ACTIVE_TENANT_ID}::uuid, ${category}, ${itemDescription}, ${storageLocation},
-        ${Number(availableQuantity) || 0}, ${unitOfMeasure || "Units"},
-        ${Number(reorderLevel) || 0}, ${Number(unitCost) || 0}
-      )
-      RETURNING *
-    `;
+    const invModel = (prisma as any).warehouseInventory;
+    let created: any = null;
 
-    const created = inserted[0];
+    if (invModel?.create) {
+      created = await invModel.create({
+        data: {
+          tenantId,
+          category: category.trim(),
+          itemDescription: itemDescription.trim(),
+          storageLocation: storageLocation.trim(),
+          availableQuantity: avail,
+          unitOfMeasure: uom,
+          reorderLevel: reorder,
+          unitCost: cost,
+        },
+      });
+    } else {
+      const inserted = await prisma.$queryRaw<any[]>`
+        INSERT INTO warehouse_inventory (
+          tenant_id, category, item_description, storage_location,
+          available_quantity, unit_of_measure, reorder_level, unit_cost
+        ) VALUES (
+          ${tenantId}::uuid, ${category.trim()}, ${itemDescription.trim()}, ${storageLocation.trim()},
+          ${avail}, ${uom},
+          ${reorder}, ${cost}
+        )
+        RETURNING *
+      `;
+      created = inserted[0];
+    }
 
     return NextResponse.json({
       success: true,
@@ -144,12 +169,12 @@ export async function POST(request: NextRequest) {
       data: {
         id: created.id,
         category: created.category,
-        itemDescription: created.item_description,
-        storageLocation: created.storage_location,
-        availableQuantity: Number(created.available_quantity),
-        unitOfMeasure: created.unit_of_measure,
-        reorderLevel: Number(created.reorder_level),
-        unitCost: Number(created.unit_cost),
+        itemDescription: created.itemDescription || created.item_description,
+        storageLocation: created.storageLocation || created.storage_location,
+        availableQuantity: Number(created.availableQuantity ?? created.available_quantity),
+        unitOfMeasure: created.unitOfMeasure || created.unit_of_measure,
+        reorderLevel: Number(created.reorderLevel ?? created.reorder_level),
+        unitCost: Number(created.unitCost ?? created.unit_cost),
       },
       error: null,
       meta: null,

@@ -25,61 +25,74 @@ const HITL_QUEUES: { table: string; label: string }[] = [
   { table: "user_role_approvals", label: "Role Elevations" },
 ];
 
-async function safeQuery<T>(run: () => Promise<T>, fallback: T): Promise<T> {
+const ALLOWED_HITL_TABLES = new Set(HITL_QUEUES.map((q) => q.table));
+
+async function safeQuery<T>(run: () => Promise<T>, fallback: T, context = "query"): Promise<T> {
   try {
     return await run();
-  } catch {
+  } catch (err) {
+    console.warn(`[dashboard/summary] ${context} failed:`, err);
     return fallback;
   }
 }
 
-async function checkTableExists(tableName: string): Promise<boolean> {
-  const result = await safeQuery(
-    () => prisma.$queryRawUnsafe<{ exists: boolean }[]>(`SELECT (to_regclass($1) IS NOT NULL) AS exists`, tableName),
-    []
-  );
-  return Boolean(result?.[0]?.exists);
+async function getExistingTables(): Promise<Set<string>> {
+  try {
+    const rows = await prisma.$queryRaw<{ tablename: string }[]>`
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    `;
+    return new Set(rows.map((r) => r.tablename));
+  } catch (err) {
+    console.warn("[dashboard/summary] Failed to query catalog for public tables:", err);
+    return new Set<string>();
+  }
 }
 
-async function loadAuthorizationQueues() {
-  const queues: { label: string; pendingCount: number }[] = [];
+async function loadAuthorizationQueues(existingTables: Set<string>, tenantId: string) {
+  const activeQueues = HITL_QUEUES.filter(
+    (queue) => existingTables.has(queue.table) && ALLOWED_HITL_TABLES.has(queue.table)
+  );
 
-  for (const queue of HITL_QUEUES) {
-    const exists = await checkTableExists(queue.table);
-    if (!exists) continue;
-
-    const rows = await safeQuery(
-      () =>
-        prisma.$queryRawUnsafe<{ count: number }[]>(
+  const results = await Promise.all(
+    activeQueues.map(async (queue) => {
+      try {
+        const rows = await prisma.$queryRawUnsafe<{ count: number }[]>(
           `SELECT COUNT(*)::int AS count FROM ${queue.table}
            WHERE tenant_id = $1::uuid AND requires_hitl = true AND status = ANY($2::text[])`,
-          ACTIVE_TENANT_ID,
+          tenantId,
           PENDING_STATUSES
-        ),
-      [] as { count: number }[]
-    );
+        );
+        const pendingCount = Number(rows?.[0]?.count ?? 0);
+        return pendingCount > 0 ? { label: queue.label, pendingCount } : null;
+      } catch (err) {
+        console.warn(`[dashboard/summary] Failed querying HITL queue ${queue.table}:`, err);
+        return null;
+      }
+    })
+  );
 
-    const pendingCount = Number(rows?.[0]?.count ?? 0);
-    if (pendingCount > 0) {
-      queues.push({ label: queue.label, pendingCount });
-    }
-  }
-
-  return queues.sort((a, b) => b.pendingCount - a.pendingCount);
+  return results
+    .filter((r): r is { label: string; pendingCount: number } => r !== null)
+    .sort((a, b) => b.pendingCount - a.pendingCount);
 }
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
+    const existingTables = await getExistingTables();
+
     const qualifiedLeads = await safeQuery(
       () =>
         prisma.crmLead.findMany({
-          where: { tenantId: ACTIVE_TENANT_ID, status: { notIn: CLOSED_LEAD_STATUSES } },
+          where: { tenantId, status: { notIn: CLOSED_LEAD_STATUSES } },
           select: { budgetMax: true, leadSource: true, status: true },
         }),
-      []
+      [],
+      "crmLead.findMany"
     );
 
     const [
@@ -95,73 +108,77 @@ export async function GET(request: NextRequest) {
       safeQuery(
         () =>
           prisma.salesBooking.aggregate({
-            where: { tenantId: ACTIVE_TENANT_ID },
+            where: { tenantId },
             _sum: { agreedTotalPrice: true },
             _count: true,
           }),
-        { _sum: { agreedTotalPrice: null }, _count: 0 }
+        { _sum: { agreedTotalPrice: null }, _count: 0 },
+        "salesBooking.aggregate"
       ),
-      safeQuery(() => prisma.masterUnit.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
+      safeQuery(() => prisma.masterUnit.count({ where: { tenantId } }), 0, "masterUnit.count"),
       safeQuery(
         () =>
           prisma.masterUnit.count({
-            where: { tenantId: ACTIVE_TENANT_ID, status: { in: BOOKED_UNIT_STATUSES } },
+            where: { tenantId, status: { in: BOOKED_UNIT_STATUSES } },
           }),
-        0
+        0,
+        "masterUnit.bookedCount"
       ),
       safeQuery(
         () =>
           prisma.budgetHead.aggregate({
-            where: { tenantId: ACTIVE_TENANT_ID },
+            where: { tenantId },
             _sum: { committedAmount: true, allocatedAmount: true, actualSpentAmount: true },
           }),
-        { _sum: { committedAmount: null, allocatedAmount: null, actualSpentAmount: null } }
+        { _sum: { committedAmount: null, allocatedAmount: null, actualSpentAmount: null } },
+        "budgetHead.aggregate"
       ),
-      safeQuery(() => prisma.crmLead.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
-      safeQuery(() => prisma.masterCustomer.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
+      safeQuery(() => prisma.crmLead.count({ where: { tenantId } }), 0, "crmLead.count"),
+      safeQuery(() => prisma.masterCustomer.count({ where: { tenantId } }), 0, "masterCustomer.count"),
       safeQuery(
         async () => {
-          const exists = await checkTableExists("hr_employees");
-          if (!exists) return [] as { count: number }[];
+          if (!existingTables.has("hr_employees")) return [] as { count: number }[];
           return prisma.$queryRawUnsafe<{ count: number }[]>(
             `SELECT COUNT(*)::int AS count FROM hr_employees WHERE tenant_id = $1::uuid AND status = 'ACTIVE'`,
-            ACTIVE_TENANT_ID
+            tenantId
           );
         },
-        [] as { count: number }[]
+        [] as { count: number }[],
+        "hr_employees.count"
       ),
-      safeQuery(() => prisma.masterProject.count({ where: { tenantId: ACTIVE_TENANT_ID } }), 0),
+      safeQuery(() => prisma.masterProject.count({ where: { tenantId } }), 0, "masterProject.count"),
     ]);
 
     const purchaseOrders = await safeQuery(
       async () => {
-        const exists = await checkTableExists("purchase_orders");
-        if (!exists) return [] as { committed: string | null; open_count: number }[];
+        if (!existingTables.has("purchase_orders")) return [] as { committed: string | null; open_count: number }[];
         return prisma.$queryRawUnsafe<{ committed: string | null; open_count: number }[]>(
           `SELECT COALESCE(SUM(order_value_amount), 0)::text AS committed, COUNT(*)::int AS open_count
            FROM purchase_orders
            WHERE tenant_id = $1::uuid AND status <> ALL($2::text[])`,
-          ACTIVE_TENANT_ID,
+          tenantId,
           SETTLED_ORDER_STATUSES
         );
       },
-      [] as { committed: string | null; open_count: number }[]
+      [] as { committed: string | null; open_count: number }[],
+      "purchase_orders.aggregate"
     );
 
-    const authorizationQueues = await loadAuthorizationQueues();
+    const authorizationQueues = await loadAuthorizationQueues(existingTables, tenantId);
 
     const bookingTrendRows = await safeQuery(
       () =>
         prisma.$queryRawUnsafe<{ period: string; bookings: number; value: string }[]>(
           `SELECT to_char(created_at, 'YYYY-MM') AS period,
-                  COUNT(*)::int AS bookings,
-                  COALESCE(SUM(agreed_total_price), 0)::text AS value
+                   COUNT(*)::int AS bookings,
+                   COALESCE(SUM(agreed_total_price), 0)::text AS value
            FROM sales_bookings
            WHERE tenant_id = $1::uuid
            GROUP BY 1 ORDER BY 1 DESC LIMIT 12`,
-          ACTIVE_TENANT_ID
+          tenantId
         ),
-      [] as { period: string; bookings: number; value: string }[]
+      [] as { period: string; bookings: number; value: string }[],
+      "sales_bookings.trend"
     );
 
     const unitMixRows = await safeQuery(
@@ -169,9 +186,10 @@ export async function GET(request: NextRequest) {
         prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
           `SELECT status, COUNT(*)::int AS count FROM master_unit
            WHERE tenant_id = $1::uuid GROUP BY 1 ORDER BY 2 DESC`,
-          ACTIVE_TENANT_ID
+          tenantId
         ),
-      [] as { status: string; count: number }[]
+      [] as { status: string; count: number }[],
+      "master_unit.mix"
     );
 
     const projectRows = await safeQuery(
@@ -194,7 +212,7 @@ export async function GET(request: NextRequest) {
            WHERE p.tenant_id = $1::uuid
            GROUP BY p.id, p.project_name, p.location, p.total_budget, p.expected_completion_date
            ORDER BY p.created_at DESC`,
-          ACTIVE_TENANT_ID,
+          tenantId,
           BOOKED_UNIT_STATUSES
         ),
       [] as {
@@ -204,7 +222,8 @@ export async function GET(request: NextRequest) {
         booked_units: number;
         total_budget: string;
         expected_completion_date: Date | null;
-      }[]
+      }[],
+      "master_project.portfolio"
     );
 
     const budgetRows = await safeQuery(
@@ -220,41 +239,42 @@ export async function GET(request: NextRequest) {
            JOIN master_cost_center cc ON cc.id = b.cost_center_id
            WHERE b.tenant_id = $1::uuid
            GROUP BY cc.name ORDER BY 2 DESC LIMIT 8`,
-          ACTIVE_TENANT_ID
+          tenantId
         ),
-      [] as { cost_centre: string; allocated: string; committed: string; spent: string }[]
+      [] as { cost_centre: string; allocated: string; committed: string; spent: string }[],
+      "budget_heads.utilisation"
     );
 
     const claimRows = await safeQuery(
       async () => {
-        const exists = await checkTableExists("contractor_ra_bills");
-        if (!exists) return [] as { status: string; count: number; value: string }[];
+        if (!existingTables.has("contractor_ra_bills")) return [] as { status: string; count: number; value: string }[];
         return prisma.$queryRawUnsafe<{ status: string; count: number; value: string }[]>(
           `SELECT status, COUNT(*)::int AS count, COALESCE(SUM(gross_claim_amount), 0)::text AS value
            FROM contractor_ra_bills WHERE tenant_id = $1::uuid GROUP BY 1 ORDER BY 2 DESC`,
-          ACTIVE_TENANT_ID
+          tenantId
         );
       },
-      [] as { status: string; count: number; value: string }[]
+      [] as { status: string; count: number; value: string }[],
+      "contractor_ra_bills.status"
     );
 
     const ticketRows = await safeQuery(
       async () => {
-        const exists = await checkTableExists("support_tickets");
-        if (!exists) return [] as { status: string; count: number }[];
+        if (!existingTables.has("support_tickets")) return [] as { status: string; count: number }[];
         return prisma.$queryRawUnsafe<{ status: string; count: number }[]>(
           `SELECT status, COUNT(*)::int AS count FROM support_tickets
            WHERE tenant_id = $1::uuid GROUP BY 1 ORDER BY 2 DESC`,
-          ACTIVE_TENANT_ID
+          tenantId
         );
       },
-      [] as { status: string; count: number }[]
+      [] as { status: string; count: number }[],
+      "support_tickets.status"
     );
 
     const activityRows = await safeQuery(
       async () => {
-        const hasTickets = await checkTableExists("support_tickets");
-        const hasBills = await checkTableExists("contractor_ra_bills");
+        const hasTickets = existingTables.has("support_tickets");
+        const hasBills = existingTables.has("contractor_ra_bills");
 
         let query = `
           SELECT b.booking_code AS label,
@@ -287,10 +307,11 @@ export async function GET(request: NextRequest) {
 
         return prisma.$queryRawUnsafe<{ label: string; detail: string; category: string; occurred_at: Date }[]>(
           query,
-          ACTIVE_TENANT_ID
+          tenantId
         );
       },
-      [] as { label: string; detail: string; category: string; occurred_at: Date }[]
+      [] as { label: string; detail: string; category: string; occurred_at: Date }[],
+      "activity.recent"
     );
 
     const leadDemandAmount = qualifiedLeads.reduce((total, lead) => total + Number(lead.budgetMax || 0), 0);
@@ -368,12 +389,14 @@ export async function GET(request: NextRequest) {
           const allocated = Number(row.allocated || 0);
           const committed = Number(row.committed || 0);
           const spent = Number(row.spent || 0);
+          const totalEngaged = committed + spent;
           return {
             costCentre: row.cost_centre,
             allocatedLakhs: Number((allocated / LAKH_IN_RUPEES).toFixed(2)),
             committedLakhs: Number((committed / LAKH_IN_RUPEES).toFixed(2)),
             spentLakhs: Number((spent / LAKH_IN_RUPEES).toFixed(2)),
-            utilisationPct: allocated > 0 ? Number((((committed + spent) / allocated) * 100).toFixed(1)) : 0,
+            utilisationPct:
+              allocated > 0 ? Number(((totalEngaged / allocated) * 100).toFixed(1)) : totalEngaged > 0 ? 100.0 : 0.0,
           };
         }),
 
@@ -399,17 +422,20 @@ export async function GET(request: NextRequest) {
       meta: null,
     });
   } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: null,
-      error: {
-        code: "DASHBOARD_SUMMARY_ERROR",
-        message: safeErrorMessage(err, "Operating console figures could not be loaded"),
+    return NextResponse.json(
+      {
+        success: false,
+        status_code: 500,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "DASHBOARD_SUMMARY_ERROR",
+          message: safeErrorMessage(err, "Operating console figures could not be loaded"),
+        },
+        meta: null,
       },
-      meta: null,
-    }, { status: 500 });
+      { status: 500 }
+    );
   }
 }

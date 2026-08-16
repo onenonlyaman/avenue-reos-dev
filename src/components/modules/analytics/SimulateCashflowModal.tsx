@@ -28,27 +28,44 @@ export function SimulateCashflowModal({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const inflows = typeof customerInflowsLakhs === "number" ? customerInflowsLakhs : 0;
-  const outflows = typeof vendorOutflowsLakhs === "number" ? vendorOutflowsLakhs : 0;
-  const debt = typeof debtServiceLakhs === "number" ? debtServiceLakhs : 1;
+  const inflows = typeof customerInflowsLakhs === "number" ? Math.max(0, customerInflowsLakhs) : 0;
+  const outflows = typeof vendorOutflowsLakhs === "number" ? Math.max(0, vendorOutflowsLakhs) : 0;
+  const debt = typeof debtServiceLakhs === "number" ? Math.max(0, debtServiceLakhs) : 0;
 
   const netCash = inflows - outflows;
-  const dscr = debt > 0 ? Number((netCash / debt).toFixed(2)) : 2.5;
+
+  let dscr: number;
+  if (debt > 0) {
+    dscr = Number((netCash / debt).toFixed(2));
+  } else {
+    dscr = netCash >= 0 ? 99.9 : 0.0;
+  }
 
   let solvencyText = "Healthy Solvency";
-  if (dscr < 1.15) solvencyText = "Liquidity Risk";
-  else if (dscr < 1.5) solvencyText = "Debt Caution";
+  if (netCash < 0 || (debt > 0 && dscr < 1.15)) {
+    solvencyText = "Liquidity Risk";
+  } else if (debt > 0 && dscr < 1.5) {
+    solvencyText = "Debt Caution";
+  }
 
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
       setError(null);
 
-      if (!operatingPeriod) throw new Error("Enter operating period label.");
-      if (inflows <= 0) throw new Error("Enter valid projected customer inflows.");
+      if (!operatingPeriod.trim()) throw new Error("Enter operating period label.");
+      if (typeof customerInflowsLakhs !== "number" || customerInflowsLakhs < 0) {
+        throw new Error("Enter valid projected customer inflows (zero or positive).");
+      }
+      if (typeof vendorOutflowsLakhs !== "number" || vendorOutflowsLakhs < 0) {
+        throw new Error("Enter valid vendor construction outflows (zero or positive).");
+      }
+      if (typeof debtServiceLakhs !== "number" || debtServiceLakhs < 0) {
+        throw new Error("Enter valid debt service obligation (zero for debt-free).");
+      }
 
       const payload: SimulateCashflowPayload = {
-        operatingPeriod,
+        operatingPeriod: operatingPeriod.trim(),
         customerInflowsLakhs: inflows,
         vendorOutflowsLakhs: outflows,
         debtServiceLakhs: debt,
@@ -108,9 +125,10 @@ export function SimulateCashflowModal({
               <Input
                 type="number"
                 min="0"
+                step="any"
                 value={customerInflowsLakhs}
-                onChange={(e) => setCustomerInflowsLakhs(e.target.value ? parseFloat(e.target.value) : "")}
-                className="h-8 text-xs font-mono font-bold text-emerald-800"
+                onChange={(e) => setCustomerInflowsLakhs(e.target.value !== "" ? parseFloat(e.target.value) : "")}
+                className="h-8 text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400"
               />
             </div>
 
@@ -119,9 +137,10 @@ export function SimulateCashflowModal({
               <Input
                 type="number"
                 min="0"
+                step="any"
                 value={vendorOutflowsLakhs}
-                onChange={(e) => setVendorOutflowsLakhs(e.target.value ? parseFloat(e.target.value) : "")}
-                className="h-8 text-xs font-mono font-bold text-rose-800"
+                onChange={(e) => setVendorOutflowsLakhs(e.target.value !== "" ? parseFloat(e.target.value) : "")}
+                className="h-8 text-xs font-mono font-bold text-rose-700 dark:text-rose-400"
               />
             </div>
 
@@ -129,9 +148,10 @@ export function SimulateCashflowModal({
               <Label className="text-xs font-medium">Debt Service (₹ L)</Label>
               <Input
                 type="number"
-                min="1"
+                min="0"
+                step="any"
                 value={debtServiceLakhs}
-                onChange={(e) => setDebtServiceLakhs(e.target.value ? parseFloat(e.target.value) : "")}
+                onChange={(e) => setDebtServiceLakhs(e.target.value !== "" ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono font-bold"
               />
             </div>
@@ -144,15 +164,19 @@ export function SimulateCashflowModal({
             <div className="space-y-1 pt-1 font-mono text-[11px]">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Net Operating Cash Flow</span>
-                <span className="font-semibold text-foreground">₹{netCash.toLocaleString("en-IN")} Lakhs</span>
+                <span className={`font-semibold ${netCash >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400"}`}>
+                  ₹{netCash.toLocaleString("en-IN")} Lakhs
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">DSCR Coverage Ratio</span>
-                <span className="font-extrabold text-foreground">{dscr}x</span>
+                <span className="font-extrabold text-foreground">
+                  {debt > 0 ? `${dscr}x` : "Unleveraged (Debt Free)"}
+                </span>
               </div>
               <div className="border-t border-border pt-1.5 flex justify-between font-bold text-xs text-foreground">
                 <span>Solvency Assessment</span>
-                <span className={dscr >= 1.5 ? "text-emerald-800" : dscr >= 1.15 ? "text-amber-800" : "text-rose-800"}>
+                <span className={solvencyText === "Healthy Solvency" ? "text-emerald-700 dark:text-emerald-400" : solvencyText === "Debt Caution" ? "text-amber-700 dark:text-amber-400" : "text-rose-700 dark:text-rose-400"}>
                   {solvencyText}
                 </span>
               </div>

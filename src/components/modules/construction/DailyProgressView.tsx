@@ -111,7 +111,7 @@ export function DailyProgressView({
           icon={Calendar}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>

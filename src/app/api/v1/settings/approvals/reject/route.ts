@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
@@ -23,16 +24,16 @@ export async function POST(request: NextRequest) {
     }
 
     const model = (prisma as any).securityOverrideRequest;
-    if (model?.update) {
-      await model.update({
-        where: { id },
+    if (model?.updateMany) {
+      await model.updateMany({
+        where: { id, tenantId: ACTIVE_TENANT_ID },
         data: { status: "REJECTED" },
       });
     } else {
       await prisma.$executeRaw`
         UPDATE security_override_requests
         SET status = 'REJECTED', updated_at = NOW()
-        WHERE id = ${id}::uuid
+        WHERE id = ${id}::uuid AND tenant_id = ${ACTIVE_TENANT_ID}::uuid
       `;
     }
 
@@ -60,3 +61,4 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+

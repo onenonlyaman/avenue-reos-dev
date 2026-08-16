@@ -13,61 +13,50 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
     const date = searchParams.get("date");
+    const tenantId = auth.user.tenantId;
 
-    const dprModel = (prisma as any).dailyProgressReport;
-    let dprs: any[] = [];
+    const where: any = { tenantId };
 
-    if (dprModel?.findMany) {
-      const where: any = {};
-      if (projectId && projectId !== "All" && projectId !== "All Nashik Developments") {
-        if (isUuid(projectId)) {
-          where.OR = [
-            { site: { projectId } },
-            { site: { project: { projectName: { contains: projectId, mode: "insensitive" } } } },
-          ];
-        } else {
-          where.site = { project: { projectName: { contains: projectId, mode: "insensitive" } } };
-        }
-      }
-      if (date) {
-        where.reportDate = new Date(date);
-      }
-      dprs = await dprModel.findMany({
-        where,
-        include: {
-          site: { include: { project: true } },
-          submittedByEmployee: true,
-        },
-        orderBy: { reportDate: "desc" },
-      });
-    } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT d.*, s.site_name, p.project_name, p.id as project_id, e.full_name as emp_name
-          FROM daily_progress_reports d
-          LEFT JOIN construction_sites s ON d.site_id = s.id
-          LEFT JOIN master_project p ON s.project_id = p.id
-          LEFT JOIN master_employee e ON d.submitted_by = e.id
-          WHERE d.tenant_id = ${ACTIVE_TENANT_ID}::uuid
-        `;
-        dprs = raw.map((r: any) => ({
-          id: r.id,
-          reportDate: r.report_date,
-          laborCount: r.labor_count,
-          progressPercentage: r.progress_percentage,
-          workDetailsJson: r.work_details_json,
-          submittedByEmployee: { fullName: r.emp_name },
-          site: { project: { projectName: r.project_name }, projectId: r.project_id },
-        }));
-      } catch {
-        dprs = [];
+    if (projectId && projectId !== "All" && projectId !== "All Nashik Developments") {
+      if (isUuid(projectId)) {
+        where.site = { projectId };
+      } else {
+        where.site = { project: { projectName: { contains: projectId, mode: "insensitive" } } };
       }
     }
 
-    const mapped = (dprs || []).map((d: any) => {
-      const details = d.workDetailsJson || {};
+    if (date) {
+      where.reportDate = new Date(date);
+    }
+
+    const dprs = await prisma.dailyProgressReport.findMany({
+      where,
+      include: {
+        site: {
+          include: {
+            project: {
+              select: {
+                id: true,
+                projectName: true,
+              },
+            },
+          },
+        },
+        submittedByEmployee: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+      },
+      orderBy: { reportDate: "desc" },
+    });
+
+    const mapped = dprs.map((d) => {
+      const details = (d.workDetailsJson as Record<string, any>) || {};
       const skilled = Number(details.skilledLaborCount || 0);
       const unskilled = Number(details.unskilledLaborCount || 0);
+
       return {
         id: d.id,
         reportDate: d.reportDate ? new Date(d.reportDate).toISOString().split("T")[0] : "",
@@ -131,125 +120,150 @@ export async function POST(request: NextRequest) {
       physicalProgressPct,
       siteGpsCoordinates,
     } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const tenantId = auth.user.tenantId;
 
-    let site: any = null;
-    try {
-      const rawSites = await prisma.$queryRaw<any[]>`
-        SELECT s.*, p.project_name FROM construction_sites s
-        LEFT JOIN master_project p ON s.project_id = p.id
-        WHERE s.tenant_id = ${ACTIVE_TENANT_ID}::uuid
-        LIMIT 1
-      `;
-      if (rawSites.length > 0) {
-        const r = rawSites[0];
-        site = {
-          id: r.id,
-          siteEngineerId: r.site_engineer_id,
-          projectId: r.project_id,
-          project: { projectName: r.project_name },
-        };
-      }
-    } catch {
+    if (!projectId || typeof projectId !== "string" || !projectId.trim()) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "MISSING_PROJECT", message: "A development project must be selected" },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    // Resolve project in tenant
+    let project = null;
+    if (isUuid(projectId.trim())) {
+      project = await prisma.masterProject.findFirst({
+        where: { id: projectId.trim(), tenantId },
+      });
+    } else {
+      project = await prisma.masterProject.findFirst({
+        where: { tenantId, projectName: { equals: projectId.trim(), mode: "insensitive" } },
+      });
+    }
+
+    if (!project) {
+      return NextResponse.json({
+        success: false,
+        status_code: 404,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "PROJECT_NOT_FOUND",
+          message: "Selected project development was not found in your organization",
+        },
+        meta: null,
+      }, { status: 404 });
+    }
+
+    // Resolve or establish construction site for this project
+    let site = await prisma.constructionSite.findFirst({
+      where: { tenantId, projectId: project.id },
+      include: { siteEngineer: true },
+    });
+
+    // Resolve engineer
+    let engineer = null;
+    if (supervisingEngineer && typeof supervisingEngineer === "string" && supervisingEngineer.trim()) {
+      engineer = await prisma.masterEmployee.findFirst({
+        where: {
+          tenantId,
+          fullName: { contains: supervisingEngineer.trim(), mode: "insensitive" },
+          status: "ACTIVE",
+        },
+      });
+    }
+
+    if (!engineer) {
+      engineer = await prisma.masterEmployee.findFirst({
+        where: { tenantId, status: "ACTIVE" },
+      });
+    }
+
+    if (!engineer) {
+      return NextResponse.json({
+        success: false,
+        status_code: 422,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "NO_ACTIVE_ENGINEER",
+          message: "An active engineer must exist in your employee directory before logging DPRs",
+        },
+        meta: null,
+      }, { status: 422 });
     }
 
     if (!site) {
-      let targetProject = null;
-      if (projectId && projectId !== "All Nashik Developments" && projectId !== "All") {
-        if (isUuid(projectId)) {
-          targetProject = await prisma.masterProject.findFirst({
-            where: { tenantId: ACTIVE_TENANT_ID, OR: [{ id: projectId }, { projectName: { contains: projectId, mode: "insensitive" } }] },
-          });
-        } else {
-          targetProject = await prisma.masterProject.findFirst({
-            where: { tenantId: ACTIVE_TENANT_ID, projectName: { contains: projectId, mode: "insensitive" } },
-          });
-        }
-      }
-
-      if (!targetProject) {
-        targetProject = await prisma.masterProject.findFirst({ where: { tenantId: ACTIVE_TENANT_ID } });
-      }
-
-      if (!targetProject) {
-        return NextResponse.json({
-          success: false,
-          status_code: 422,
-          timestamp: new Date().toISOString(),
-          request_id: `req-${Date.now()}`,
-          data: null,
-          error: {
-            code: "NO_PROJECT_FOUND",
-            message: "Register a development project before logging site progress",
-          },
-          meta: null,
-        }, { status: 422 });
-      }
-
-      const emp = supervisingEngineer
-        ? await prisma.masterEmployee.findFirst({
-            where: { tenantId, fullName: { contains: supervisingEngineer, mode: "insensitive" }, status: "ACTIVE" },
-          })
-        : await prisma.masterEmployee.findFirst({ where: { tenantId, status: "ACTIVE" } });
-
-      if (!emp) {
-        return NextResponse.json({
-          success: false,
-          status_code: 422,
-          timestamp: new Date().toISOString(),
-          request_id: `req-${Date.now()}`,
-          data: null,
-          error: {
-            code: "NO_SITE_ENGINEER_ON_RECORD",
-            message: "Register a supervising engineer in the workforce directory before logging site progress",
-          },
-          meta: null,
-        }, { status: 422 });
-      }
-
-      const newSiteId = (await prisma.$queryRaw<any[]>`
-        INSERT INTO construction_sites (
-          id, tenant_id, project_id, site_code, site_name, gps_coordinates, status, site_engineer_id, created_at, updated_at
-        ) VALUES (
-          gen_random_uuid(), ${tenantId}::uuid, ${targetProject.id}::uuid, ${`SITE-${Date.now().toString().slice(-4)}`}, ${targetProject.projectName}, ${siteGpsCoordinates || ""}, 'ACTIVE', ${emp.id}::uuid, NOW(), NOW()
-        )
-        RETURNING id
-      `)[0]?.id;
-
-      site = {
-        id: newSiteId,
-        siteEngineerId: emp.id,
-        projectId: targetProject.id,
-        project: { projectName: targetProject.projectName },
-      };
+      site = await prisma.constructionSite.create({
+        data: {
+          tenantId,
+          projectId: project.id,
+          siteCode: `SITE-${project.projectCode || Date.now().toString().slice(-4)}`,
+          siteName: `${project.projectName} Site Operations`,
+          gpsCoordinates: siteGpsCoordinates || project.location || "Nashik Operations",
+          status: "ACTIVE",
+          siteEngineerId: engineer.id,
+        },
+        include: { siteEngineer: true },
+      });
     }
 
-    const totalLabor = Number(skilledLaborCount || 0) + Number(unskilledLaborCount || 0);
+    const skilled = Math.max(0, parseInt(String(skilledLaborCount || 0), 10));
+    const unskilled = Math.max(0, parseInt(String(unskilledLaborCount || 0), 10));
+    const totalLabor = skilled + unskilled;
+    const progress = Math.max(0, Math.min(100, parseFloat(String(physicalProgressPct || 0))));
+
     const dprCode = `DPR-${Date.now().toString().slice(-6)}`;
     const detailsJson = {
-      supervisingEngineer,
-      skilledLaborCount: Number(skilledLaborCount || 0),
-      unskilledLaborCount: Number(unskilledLaborCount || 0),
-      equipmentHours: Number(equipmentHours || 0),
-      cementBags: Number(cementBags || 0),
-      steelMt: Number(steelMt || 0),
-      concreteM3: Number(concreteM3 || 0),
-      workDetails,
+      supervisingEngineer: supervisingEngineer || engineer.fullName,
+      skilledLaborCount: skilled,
+      unskilledLaborCount: unskilled,
+      equipmentHours: Math.max(0, parseFloat(String(equipmentHours || 0))),
+      cementBags: Math.max(0, parseInt(String(cementBags || 0), 10)),
+      steelMt: Math.max(0, parseFloat(String(steelMt || 0))),
+      concreteM3: Math.max(0, parseFloat(String(concreteM3 || 0))),
+      workDetails: (workDetails && typeof workDetails === "string" ? workDetails.trim() : "") || "Routine construction progress logged.",
     };
 
-    const inserted = await prisma.$queryRaw<any[]>`
-      INSERT INTO daily_progress_reports (
-        id, tenant_id, dpr_code, site_id, report_date, submitted_by,
-        labor_count, weather_condition, progress_percentage, status, work_details_json,
-        created_at, updated_at
-      ) VALUES (
-        gen_random_uuid(), ${tenantId}::uuid, ${dprCode}, ${site.id}::uuid, ${new Date(reportDate || Date.now())}::date, ${site.siteEngineerId}::uuid,
-        ${totalLabor}, 'Clear Sky', ${Number(physicalProgressPct || 0)}, 'APPROVED', ${JSON.stringify(detailsJson)}::jsonb,
-        NOW(), NOW()
-      )
-      RETURNING *
-    `;
-    const createdDpr = inserted[0];
+    const createdDpr = await prisma.dailyProgressReport.create({
+      data: {
+        tenantId,
+        dpr_code: dprCode,
+        siteId: site.id,
+        reportDate: reportDate ? new Date(reportDate) : new Date(),
+        submittedBy: engineer.id,
+        laborCount: totalLabor,
+        weatherCondition: "Clear Sky",
+        progressPercentage: progress,
+        status: "APPROVED",
+        workDetailsJson: detailsJson,
+      },
+      include: {
+        site: {
+          include: {
+            project: {
+              select: {
+                id: true,
+                projectName: true,
+              },
+            },
+          },
+        },
+        submittedByEmployee: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -258,19 +272,19 @@ export async function POST(request: NextRequest) {
       request_id: `req-${Date.now()}`,
       data: {
         id: createdDpr.id,
-        reportDate: createdDpr.report_date ? new Date(createdDpr.report_date).toISOString().split("T")[0] : "",
-        supervisingEngineer: supervisingEngineer || "",
-        skilledLaborCount: Number(skilledLaborCount || 0),
-        unskilledLaborCount: Number(unskilledLaborCount || 0),
+        reportDate: createdDpr.reportDate ? new Date(createdDpr.reportDate).toISOString().split("T")[0] : "",
+        supervisingEngineer: detailsJson.supervisingEngineer,
+        skilledLaborCount: detailsJson.skilledLaborCount,
+        unskilledLaborCount: detailsJson.unskilledLaborCount,
         totalLaborCount: totalLabor,
-        equipmentHours: Number(equipmentHours || 0),
-        cementBags: Number(cementBags || 0),
-        steelMt: Number(steelMt || 0),
-        concreteM3: Number(concreteM3 || 0),
-        workDetails: workDetails || "",
-        physicalProgressPct: Number(physicalProgressPct || 0),
-        projectName: site.project?.projectName || "",
-        projectId: site.projectId,
+        equipmentHours: detailsJson.equipmentHours,
+        cementBags: detailsJson.cementBags,
+        steelMt: detailsJson.steelMt,
+        concreteM3: detailsJson.concreteM3,
+        workDetails: detailsJson.workDetails,
+        physicalProgressPct: Number(createdDpr.progressPercentage),
+        projectName: project.projectName,
+        projectId: project.id,
       },
       error: null,
       meta: null,
@@ -290,5 +304,6 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 
 

@@ -9,9 +9,25 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Users, UserPlus, ShieldCheck, AlertCircle, Loader2 } from "lucide-react";
+import { Users, UserPlus, ShieldCheck, AlertCircle, Loader2, Eye, EyeOff } from "lucide-react";
 import { settingsApi, UserAccount, ProvisionUserPayload } from "@/services/settingsApi";
 import { RolePermissionsModal } from "./RolePermissionsModal";
+
+const PLATFORM_ROLES = [
+  { value: "Super Admin", label: "Super Admin (Full Platform Authority)" },
+  { value: "Governance Director", label: "Governance Director (System Oversight)" },
+  { value: "Finance Lead", label: "Finance Lead (Treasury & Ledger Approvals)" },
+  { value: "Accountant", label: "Accountant (Journal & Invoices)" },
+  { value: "Auditor", label: "Auditor (Read & Compliance Audit)" },
+  { value: "Construction Manager", label: "Construction Manager (Site Works & RA Bills)" },
+  { value: "Site Engineer", label: "Site Engineer (Daily Reports & NCRs)" },
+  { value: "Sales Lead", label: "Sales Lead (Bookings & CRM Oversight)" },
+  { value: "Sales Executive", label: "Sales Executive (Leads & Unit Allocation)" },
+  { value: "HR Manager", label: "HR Manager (Staff & Payroll)" },
+  { value: "HR Lead", label: "HR Lead (Onboarding & Attendance)" },
+  { value: "Legal Lead", label: "Legal Lead (Contracts & Title Verification)" },
+  { value: "Regulatory Officer", label: "Regulatory Officer (RERA & Statutory Clearances)" },
+];
 
 export function UserManagementView() {
   const [users, setUsers] = useState<UserAccount[]>([]);
@@ -21,9 +37,11 @@ export function UserManagementView() {
   const [isProvisionOpen, setIsProvisionOpen] = useState<boolean>(false);
   const [isMatrixOpen, setIsMatrixOpen] = useState<boolean>(false);
 
-  const [fullName, setFullName] = useState<string>("Rajesh Patil");
-  const [corporateEmail, setCorporateEmail] = useState<string>("rajesh.patil@avenuebuilders.in");
-  const [assignedRole, setAssignedRole] = useState<string>("Finance Manager");
+  const [fullName, setFullName] = useState<string>("");
+  const [corporateEmail, setCorporateEmail] = useState<string>("");
+  const [initialPassword, setInitialPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [assignedRole, setAssignedRole] = useState<string>("Finance Lead");
   const [department, setDepartment] = useState<string>("Finance & Treasury");
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -46,19 +64,44 @@ export function UserManagementView() {
     loadData();
   }, []);
 
+  const handleOpenProvision = () => {
+    setFullName("");
+    setCorporateEmail("");
+    setInitialPassword("");
+    setAssignedRole("Finance Lead");
+    setDepartment("Finance & Treasury");
+    setModalError(null);
+    setIsProvisionOpen(true);
+  };
+
   const handleProvisionUser = async () => {
     try {
       setIsSubmitting(true);
       setModalError(null);
 
-      if (!fullName) throw new Error("Full name is required.");
-      if (!corporateEmail) throw new Error("Corporate email is required.");
+      const trimmedName = fullName.trim();
+      const trimmedEmail = corporateEmail.trim().toLowerCase();
+      const trimmedPassword = initialPassword.trim();
+      const trimmedDept = department.trim() || "Operations";
+
+      if (!trimmedName) throw new Error("Full name is required.");
+      if (!trimmedEmail) throw new Error("Corporate email address is required.");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        throw new Error("Please enter a valid corporate email address.");
+      }
+      if (!trimmedPassword) {
+        throw new Error("Initial password is required (minimum 8 characters with letters and numbers).");
+      }
+      if (trimmedPassword.length < 8) {
+        throw new Error("Password must be at least 8 characters long.");
+      }
 
       const payload: ProvisionUserPayload = {
-        fullName,
-        corporateEmail,
+        fullName: trimmedName,
+        corporateEmail: trimmedEmail,
         assignedRole,
-        department,
+        department: trimmedDept,
+        initialPassword: trimmedPassword,
       };
 
       await settingsApi.provisionUser(payload);
@@ -94,7 +137,7 @@ export function UserManagementView() {
           <Button
             size="sm"
             className="h-9 text-xs gap-1.5 font-medium"
-            onClick={() => setIsProvisionOpen(true)}
+            onClick={handleOpenProvision}
           >
             <UserPlus className="h-3.5 w-3.5" />
             Provision User Account
@@ -118,9 +161,9 @@ export function UserManagementView() {
       ) : users.length === 0 ? (
         <CorporateEmptyState
           title="No System Users Provisioned"
-          description="No user accounts registered."
+          description="No user accounts currently exist for this organization."
           actionLabel="Provision User Account"
-          onAction={() => setIsProvisionOpen(true)}
+          onAction={handleOpenProvision}
           icon={Users}
         />
       ) : (
@@ -157,7 +200,7 @@ export function UserManagementView() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs py-3 text-center font-mono text-muted-foreground">
-                    {u.lastActiveDate}
+                    {u.lastActiveDate || "—"}
                   </TableCell>
                 </TableRow>
               ))}
@@ -172,8 +215,8 @@ export function UserManagementView() {
             <DialogTitle className="text-base font-bold font-heading">
               Provision User Identity Account
             </DialogTitle>
-            <DialogDescription className="sr-only">
-              Create corporate identity credentials and assign system RBAC authorization roles.
+            <DialogDescription className="text-xs text-muted-foreground">
+              Create credentials and assign system RBAC authorization roles for corporate staff.
             </DialogDescription>
           </DialogHeader>
 
@@ -189,8 +232,9 @@ export function UserManagementView() {
               <Input
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Rajesh Patil"
+                placeholder="e.g. Ramesh Kumar"
                 className="h-8 text-xs"
+                autoComplete="off"
               />
             </div>
 
@@ -200,12 +244,36 @@ export function UserManagementView() {
                 type="email"
                 value={corporateEmail}
                 onChange={(e) => setCorporateEmail(e.target.value)}
-                placeholder="e.g. rajesh.patil@avenuebuilders.in"
+                placeholder="e.g. ramesh.kumar@avenuebuilders.in"
                 className="h-8 text-xs font-mono"
+                autoComplete="off"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Initial Password</Label>
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={initialPassword}
+                  onChange={(e) => setInitialPassword(e.target.value)}
+                  placeholder="Min 8 characters (letters & numbers)"
+                  className="h-8 text-xs font-mono pr-8"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Assigned System Role</Label>
                 <Select value={assignedRole} onValueChange={(val) => val && setAssignedRole(val)}>
@@ -213,13 +281,11 @@ export function UserManagementView() {
                     <SelectValue placeholder="Select Role" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="System Administrator">System Administrator</SelectItem>
-                    <SelectItem value="Project Director">Project Director</SelectItem>
-                    <SelectItem value="Finance Manager">Finance Manager</SelectItem>
-                    <SelectItem value="Procurement Lead">Procurement Lead</SelectItem>
-                    <SelectItem value="Site Engineer">Site Engineer</SelectItem>
-                    <SelectItem value="Sales Manager">Sales Manager</SelectItem>
-                    <SelectItem value="Board Member">Board Member</SelectItem>
+                    {PLATFORM_ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -229,7 +295,7 @@ export function UserManagementView() {
                 <Input
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. Finance & Treasury"
+                  placeholder="e.g. Finance & Accounts"
                   className="h-8 text-xs"
                 />
               </div>
@@ -262,3 +328,4 @@ export function UserManagementView() {
     </div>
   );
 }
+

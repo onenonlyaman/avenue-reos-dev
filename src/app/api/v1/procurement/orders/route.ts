@@ -1,30 +1,63 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { HITL_PROCUREMENT_LIMIT } from "@/lib/governance";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import crypto from "crypto";
+
+async function ensurePurchaseOrdersTable() {
+  await runtimeDdl("table:purchase_orders", async () => {
+    await prisma.$executeRaw`
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        tenant_id UUID NOT NULL,
+        order_reference VARCHAR(100) NOT NULL,
+        site_name VARCHAR(255) NOT NULL,
+        vendor_name VARCHAR(255) NOT NULL,
+        material_description VARCHAR(255) NOT NULL,
+        quantity DECIMAL(15,2) NOT NULL,
+        unit_rate DECIMAL(15,2) NOT NULL,
+        freight_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        gst_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        order_value_amount DECIMAL(15,2) NOT NULL,
+        delivery_due_date DATE NOT NULL,
+        requires_hitl BOOLEAN NOT NULL DEFAULT false,
+        status VARCHAR(50) NOT NULL,
+        rejection_reason TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+    await prisma.$executeRaw`
+      ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS rejection_reason TEXT
+    `;
+    await prisma.$executeRaw`
+      CREATE INDEX IF NOT EXISTS idx_po_tenant_status ON purchase_orders (tenant_id, status)
+    `;
+  });
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
   try {
+    await ensurePurchaseOrdersTable();
+    const tenantId = auth.user.tenantId;
     const poModel = (prisma as any).purchaseOrder;
     let orders: any[] = [];
 
     if (poModel?.findMany) {
       orders = await poModel.findMany({
+        where: { tenantId },
         orderBy: { createdAt: "desc" },
       });
     } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM purchase_orders WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
-        `;
-        orders = raw || [];
-      } catch {
-        orders = [];
-      }
+      const raw = await prisma.$queryRaw<any[]>`
+        SELECT * FROM purchase_orders 
+        WHERE tenant_id = ${tenantId}::uuid 
+        ORDER BY created_at DESC
+      `;
+      orders = raw || [];
     }
 
     const mapped = orders.map((o: any) => ({
@@ -37,6 +70,7 @@ export async function GET(request: NextRequest) {
       deliveryDueDate: o.deliveryDueDate ? new Date(o.deliveryDueDate).toISOString().split("T")[0] : "",
       requiresHitl: Boolean(o.requiresHitl ?? o.requires_hitl),
       status: o.status || "PENDING_APPROVAL",
+      rejectionReason: o.rejectionReason || o.rejection_reason || null,
       quantity: Number(o.quantity || 0),
       unitRate: Number(o.unitRate ?? o.unit_rate ?? 0),
       freightAmount: Number(o.freightAmount ?? o.freight_amount ?? 0),
@@ -75,7 +109,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { siteName, vendorName, materialDescription, quantity, unitRate, freightAmount, deliveryDueDate } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const tenantId = auth.user.tenantId;
 
     if (!siteName || !vendorName || !materialDescription) {
       return NextResponse.json({
@@ -89,16 +123,47 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const qty = Number(quantity || 0);
-    const rate = Number(unitRate || 0);
-    const freight = Number(freightAmount || 0);
+    const qty = Number(quantity);
+    const rate = Number(unitRate);
+    const freight = Math.max(0, Number(freightAmount) || 0);
+
+    if (isNaN(qty) || qty <= 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "INVALID_QUANTITY", message: "Order quantity must be a positive number greater than 0." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    if (isNaN(rate) || rate <= 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "INVALID_RATE", message: "Unit rate must be a positive number greater than 0." },
+        meta: null,
+      }, { status: 400 });
+    }
+
     const baseValue = qty * rate + freight;
-    const gst = baseValue * 0.18;
-    const totalValue = baseValue + gst;
+    const gst = Math.round(baseValue * 0.18 * 100) / 100;
+    const totalValue = Math.round((baseValue + gst) * 100) / 100;
 
     const requiresHitl = totalValue > HITL_PROCUREMENT_LIMIT;
     const status = requiresHitl ? "PENDING_APPROVAL" : "APPROVED";
-    const orderRef = `PO-${Date.now().toString().slice(-6)}`;
+    
+    // Cryptographically collision-safe reference code
+    const datePrefix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const randomHex = crypto.randomBytes(3).toString("hex").toUpperCase();
+    const orderRef = `PO-${datePrefix}-${randomHex}`;
+
+    await ensurePurchaseOrdersTable();
 
     const poModel = (prisma as any).purchaseOrder;
     let created: any = null;
@@ -108,9 +173,9 @@ export async function POST(request: NextRequest) {
         data: {
           tenantId,
           orderReference: orderRef,
-          siteName,
-          vendorName,
-          materialDescription,
+          siteName: siteName.trim(),
+          vendorName: vendorName.trim(),
+          materialDescription: materialDescription.trim(),
           quantity: qty,
           unitRate: rate,
           freightAmount: freight,
@@ -122,43 +187,19 @@ export async function POST(request: NextRequest) {
         },
       });
     } else {
-      try {
-        await runtimeDdl("table:purchase_orders", () => prisma.$executeRaw`
-          CREATE TABLE IF NOT EXISTS purchase_orders (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL,
-            order_reference VARCHAR(100) NOT NULL,
-            site_name VARCHAR(255) NOT NULL,
-            vendor_name VARCHAR(255) NOT NULL,
-            material_description VARCHAR(255) NOT NULL,
-            quantity DECIMAL(15,2) NOT NULL,
-            unit_rate DECIMAL(15,2) NOT NULL,
-            freight_amount DECIMAL(15,2) NOT NULL,
-            gst_amount DECIMAL(15,2) NOT NULL,
-            order_value_amount DECIMAL(15,2) NOT NULL,
-            delivery_due_date DATE NOT NULL,
-            requires_hitl BOOLEAN NOT NULL DEFAULT false,
-            status VARCHAR(50) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `);
-        const inserted = await prisma.$queryRaw<any[]>`
-          INSERT INTO purchase_orders (
-            tenant_id, order_reference, site_name, vendor_name, material_description,
-            quantity, unit_rate, freight_amount, gst_amount, order_value_amount,
-            delivery_due_date, requires_hitl, status
-          ) VALUES (
-            ${tenantId}::uuid, ${orderRef}, ${siteName}, ${vendorName}, ${materialDescription},
-            ${qty}, ${rate}, ${freight}, ${gst}, ${totalValue},
-            ${new Date(deliveryDueDate || Date.now())}::date, ${requiresHitl}, ${status}
-          )
-          RETURNING *
-        `;
-        created = inserted[0];
-      } catch (err: unknown) {
-        throw new Error(safeErrorMessage(err, "Purchase order could not be saved"));
-      }
+      const inserted = await prisma.$queryRaw<any[]>`
+        INSERT INTO purchase_orders (
+          tenant_id, order_reference, site_name, vendor_name, material_description,
+          quantity, unit_rate, freight_amount, gst_amount, order_value_amount,
+          delivery_due_date, requires_hitl, status
+        ) VALUES (
+          ${tenantId}::uuid, ${orderRef}, ${siteName.trim()}, ${vendorName.trim()}, ${materialDescription.trim()},
+          ${qty}, ${rate}, ${freight}, ${gst}, ${totalValue},
+          ${new Date(deliveryDueDate || Date.now())}::date, ${requiresHitl}, ${status}
+        )
+        RETURNING *
+      `;
+      created = inserted[0];
     }
 
     return NextResponse.json({
@@ -176,6 +217,7 @@ export async function POST(request: NextRequest) {
         deliveryDueDate: created.deliveryDueDate ? new Date(created.deliveryDueDate).toISOString().split("T")[0] : "",
         requiresHitl: Boolean(created.requiresHitl ?? created.requires_hitl),
         status: created.status,
+        rejectionReason: null,
         quantity: qty,
         unitRate: rate,
         freightAmount: freight,
@@ -199,7 +241,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-
-

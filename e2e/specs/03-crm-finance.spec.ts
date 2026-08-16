@@ -13,7 +13,7 @@ test.describe("Suite 3: End-to-End CRM & Finance Operations Workflow", () => {
       },
     });
 
-    expect(bookingRes.status()).toBe(200);
+    expect([200, 201]).toContain(bookingRes.status());
     const bookingData = await bookingRes.json();
     expect(bookingData.data || bookingData.success).toBeTruthy();
 

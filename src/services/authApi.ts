@@ -105,4 +105,11 @@ export const authApi = {
       body: JSON.stringify({ token, password }),
     });
   },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    return fetchEnvelope<{ success: boolean; message: string }>(`${API_BASE}/change-password`, {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  },
 };

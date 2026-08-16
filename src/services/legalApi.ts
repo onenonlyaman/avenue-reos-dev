@@ -34,6 +34,10 @@ export interface LandParcel {
   titleStatus: "Clear Title" | "Title Under Verification" | "Litigated / Encumbered";
   acquisitionPhase: "SOURCING" | "FEASIBILITY" | "DUE_DILIGENCE" | "ACQUIRED" | "REJECTED";
   requiresHitl: boolean;
+  rejectionReason?: string | null;
+  approvedBy?: string | null;
+  reviewedAt?: string | null;
+  createdAt?: string;
 }
 
 export interface JdaContract {
@@ -45,18 +49,20 @@ export interface JdaContract {
   landownerSharePct: number;
   escrowAccountStatus: "ACTIVE" | "PENDING_SETUP" | "FROZEN";
   contractStatus: "ACTIVE" | "DRAFT" | "TERMINATED";
+  createdAt?: string;
 }
 
 export interface ReraCompliance {
   id: string;
   projectName: string;
   reraRegReference: string;
-  quarterlyReturnStatus: "COMPLIANT" | "PENDING_FILING" | "OVERDUE";
+  quarterlyReturnStatus: "COMPLIANT" | "PENDING" | "PENDING_FILING" | "OVERDUE";
   escrowBalanceLakhs: number;
   form1Status: boolean;
   form2Status: boolean;
   form3Status: boolean;
-  certificateAuditStatus: "Compliant" | "Pending Certification" | "Overdue Filing";
+  certificateAuditStatus: "Compliant" | "Under Review" | "Pending Certification" | "Overdue Filing" | "Lapsed";
+  createdAt?: string;
 }
 
 export interface TitleSearchLog {
@@ -64,9 +70,10 @@ export interface TitleSearchLog {
   surveyNumber: string;
   legalAdvocate: string;
   searchPeriodYears: number;
-  encumbranceStatus: "Clear" | "Mortgage Registered" | "Disputed";
+  encumbranceStatus: "Clear" | "Encumbered" | "Under Verification" | "Mortgage Registered" | "Disputed";
   extractVerified712: boolean;
   riskRating: "LOW" | "MEDIUM" | "HIGH";
+  createdAt?: string;
 }
 
 export interface AcquireLandPayload {

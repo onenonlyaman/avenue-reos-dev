@@ -1,255 +1,266 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { CorporateStatCard } from "@/components/core/CorporateStatCard";
-import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
+import React, { useState, useEffect } from "react";
+import { tallyErpApi, BankBrsResponse } from "@/services/tallyErpApi";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Landmark, CheckCircle2, UploadCloud, Coins, ShieldAlert } from "lucide-react";
-import { tallyErpApi, BankBrsResponse } from "@/services/tallyErpApi";
-
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
+import { toast } from "@/components/ui/sonner";
+import { Landmark, Upload, CheckCircle2, Download, RefreshCw, Layers } from "lucide-react";
 
 export function ConnectedBankingView() {
-  const [brsData, setBrsData] = useState<BankBrsResponse | null>(null);
+  const [data, setData] = useState<BankBrsResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSummary, setUploadSummary] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [csvContent, setCsvContent] = useState<string>("");
+  const [selectedBankId, setSelectedBankId] = useState<string>("");
+  const [isAutoReconciling, setIsAutoReconciling] = useState<boolean>(false);
 
-  const [denom2000, setDenom2000] = useState<number>(0);
-  const [denom500, setDenom500] = useState<number>(0);
-  const [denom200, setDenom200] = useState<number>(0);
-  const [denom100, setDenom100] = useState<number>(0);
-
-  const loadData = async () => {
+  const loadBankingData = async () => {
     setIsLoading(true);
-    setLoadError(null);
     try {
       const res = await tallyErpApi.fetchBankingBrs();
-      setBrsData(res);
-    } catch (err: unknown) {
-      setBrsData(null);
-      setLoadError(err instanceof Error ? err.message : "Records could not be loaded");
+      setData(res);
+      if (res.accounts && res.accounts.length > 0 && !selectedBankId) {
+        setSelectedBankId(res.accounts[0].id);
+      }
+    } catch (err: any) {
+      toast({ title: "Failed to load Banking Reconciliation", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadBankingData();
   }, []);
 
-  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
-    setUploadError(null);
-    setUploadSummary(null);
-
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setUploadError("That file is larger than the 5 MB limit.");
+  const handleUploadCsv = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csvContent.trim() || !selectedBankId) {
+      toast({ title: "Validation Error", description: "CSV content and bank account are required.", variant: "destructive" });
       return;
     }
 
-    setIsUploading(true);
     try {
-      const rawData = await file.text();
-      const result = await tallyErpApi.uploadBankStatement({ filename: file.name, rawData });
-      setUploadSummary(
-        `${result.importedCount} transaction(s) imported` +
-          (result.rejectedCount > 0 ? `, ${result.rejectedCount} line(s) rejected` : "") +
-          ". Imported lines are unreconciled until matched."
-      );
-      await loadData();
-    } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : "The statement could not be imported");
-    } finally {
+      const res = await tallyErpApi.uploadBankStatementCsv(selectedBankId, "statement_feed.csv", csvContent);
+      toast({ title: "Statement Uploaded", description: res.message });
       setIsUploading(false);
+      setCsvContent("");
+      loadBankingData();
+    } catch (err: any) {
+      toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
     }
   };
 
-  const countedPettyCash = denom2000 * 2000 + denom500 * 500 + denom200 * 200 + denom100 * 100;
+  const handleAutoReconcile = async () => {
+    setIsAutoReconciling(true);
+    try {
+      const res = await tallyErpApi.runAutoReconcile();
+      toast({ title: "Reconciliation Complete", description: res.message });
+      loadBankingData();
+    } catch (err: any) {
+      toast({ title: "Auto-Reconciliation Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsAutoReconciling(false);
+    }
+  };
+
+  const handleExportPayoutBatch = async () => {
+    try {
+      const res = await tallyErpApi.exportPayoutBatchCsv();
+      const blob = new Blob([res.csvData], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", res.fileName || "corporate_payout_batch.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast({ title: "Batch Exported", description: "Corporate NEFT/RTGS payout instruction downloaded." });
+    } catch (err: any) {
+      toast({ title: "Export Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground animate-pulse">
+        Loading Bank Ledgers & Statement Clearance Lines...
+      </div>
+    );
+  }
+
+  const accounts = data?.accounts || [];
+  const statements = data?.unmatchedStatements || [];
+  const bookEntries = data?.bookEntries || [];
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <CorporateStatCard
-          label="Imported Statement Net"
-          value={`₹${(brsData?.importedNetAmount ?? 0).toLocaleString("en-IN")}`}
-          subtext="Credits less debits across imported statements"
-          icon={Landmark}
-          trendDirection="neutral"
-        />
-        <CorporateStatCard
-          label="Reconciled Value"
-          value={`₹${(brsData?.reconciledAmount ?? 0).toLocaleString("en-IN")}`}
-          subtext="Lines marked reconciled"
-          icon={CheckCircle2}
-          trendDirection="neutral"
-        />
-        <CorporateStatCard
-          label="Unreconciled Items"
-          value={String(brsData?.unreconciledChequesCount ?? 0)}
-          subtext="Awaiting manual match"
-          icon={ShieldAlert}
-          trendDirection={brsData?.unreconciledChequesCount ? "down" : "up"}
-        />
-        <CorporateStatCard
-          label="Petty Cash Counted"
-          value={`₹${countedPettyCash.toLocaleString("en-IN")}`}
-          subtext="Entered below; not persisted"
-          icon={Coins}
-          trendDirection="neutral"
-        />
+      {/* Bank Account Balances Header */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {accounts.map((acc) => (
+          <Card key={acc.id} className="border-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase flex items-center justify-between">
+                <span>{acc.bankName}</span>
+                <Landmark className="h-4 w-4 text-primary" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-mono font-bold text-foreground">
+                ₹{acc.bookBalance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+              </div>
+              <p className="text-xs font-mono text-muted-foreground mt-1">
+                A/c: {acc.accountNumber} ({acc.ifscCode})
+              </p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1 border-border shadow-xs space-y-4">
-          <CardHeader className="pb-3 border-b border-border">
-            <CardTitle className="text-base font-semibold font-heading">
-              Import Bank Statement
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Delimited export with columns: date, description, reference, amount, type
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4 space-y-3">
-            {uploadError && (
-              <div className="p-3 text-xs bg-red-50 text-red-900 border border-red-200 rounded">
-                {uploadError}
-              </div>
-            )}
-            {uploadSummary && (
-              <div className="p-3 text-xs bg-emerald-50 text-emerald-900 border border-emerald-200 rounded">
-                {uploadSummary}
-              </div>
-            )}
+      {/* Action Toolbar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-muted/20 border border-border rounded-xl">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-mono text-xs">
+            {statements.length} Statement Txns
+          </Badge>
+          <Badge variant="outline" className="font-mono text-xs">
+            {bookEntries.length} Book Vouchers
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button size="sm" variant="outline" onClick={handleExportPayoutBatch} className="gap-1.5 text-xs">
+            <Download className="h-3.5 w-3.5" /> Export Payout CSV
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setIsUploading(true)} className="gap-1.5 text-xs">
+            <Upload className="h-3.5 w-3.5" /> Upload Statement
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleAutoReconcile}
+            disabled={isAutoReconciling}
+            className="gap-1.5 text-xs font-bold bg-primary"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isAutoReconciling ? "animate-spin" : ""}`} />
+            <span>3-Point Fuzzy Auto-Match</span>
+          </Button>
+        </div>
+      </div>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.txt,text/csv,text/plain"
-              onChange={handleFileSelected}
-              className="hidden"
-            />
-
-            <Button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="w-full h-8 text-xs font-semibold gap-2"
-            >
-              <UploadCloud className="h-3.5 w-3.5" />
-              {isUploading ? "Importing statement..." : "Choose statement file"}
-            </Button>
-          </CardContent>
-
-          <CardHeader className="pb-3 border-b border-t border-border">
-            <CardTitle className="text-base font-semibold font-heading">
-              Petty Cash Denomination Count
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4 space-y-2">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
-                { label: "₹2000 Notes", value: denom2000, set: setDenom2000 },
-                { label: "₹500 Notes", value: denom500, set: setDenom500 },
-                { label: "₹200 Notes", value: denom200, set: setDenom200 },
-                { label: "₹100 Notes", value: denom100, set: setDenom100 },
-              ].map((row) => (
-                <div
-                  key={row.label}
-                  className="flex items-center justify-between p-2 bg-muted/30 border border-border rounded"
-                >
-                  <span>{row.label}:</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={row.value}
-                    onChange={(e) => row.set(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-16 h-6 text-xs text-right font-mono"
-                  />
-                </div>
-              ))}
+      {/* Split Workspace: Statement Lines vs Book Vouchers */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Bank Statement Transactions */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold">Bank Statement Clearance Feed</CardTitle>
+              <CardDescription>Inbound transactions parsed from MT940/CSV feeds</CardDescription>
             </div>
-            <div className="p-2 bg-card border border-border rounded flex justify-between items-center text-xs font-bold font-heading">
-              <span>Counted Total:</span>
-              <span className="font-mono">₹{countedPettyCash.toLocaleString("en-IN")}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2 border-border shadow-xs">
-          <CardHeader className="pb-3 border-b border-border">
-            <CardTitle className="text-base font-semibold font-heading">
-              Bank Reconciliation Register
-            </CardTitle>
           </CardHeader>
-          <CardContent className="pt-4">
-            {isLoading ? (
-              <div className="p-8 text-center text-xs text-muted-foreground">Loading records...</div>
-            ) : loadError ? (
-              <CorporateEmptyState
-                title="Records could not be loaded"
-                description={loadError}
-                actionLabel="Retry"
-                onAction={loadData}
-                icon={ShieldAlert}
-              />
-            ) : !brsData?.brsItems || brsData.brsItems.length === 0 ? (
-              <CorporateEmptyState
-                title="No statement lines on record"
-                description="Import a bank statement to populate this register."
-                icon={Landmark}
-              />
+          <CardContent className="p-0">
+            {statements.length === 0 ? (
+              <div className="p-6">
+                <CorporateEmptyState
+                  icon={Landmark}
+                  title="No Statement Lines Uploaded"
+                  description="Upload your bank statement CSV to run automated 3-point fuzzy reconciliation."
+                  actionLabel="Upload Statement CSV"
+                  onAction={() => setIsUploading(true)}
+                />
+              </div>
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="border-border">
-                    <TableHead className="text-xs font-semibold">Date</TableHead>
-                    <TableHead className="text-xs font-semibold">Description</TableHead>
-                    <TableHead className="text-xs font-semibold">Reference</TableHead>
-                    <TableHead className="text-xs font-semibold text-right">Amount (INR)</TableHead>
-                    <TableHead className="text-xs font-semibold text-center">Status</TableHead>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Reference</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Amount (₹)</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {brsData.brsItems.map((item) => (
-                    <TableRow key={item.id} className="border-border">
-                      <TableCell className="text-xs font-mono text-muted-foreground">
-                        {item.transactionDate ?? "—"}
+                  {statements.map((s) => {
+                    const isDr = s.withdrawalDebit > 0;
+                    const amt = isDr ? s.withdrawalDebit : s.depositCredit;
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-mono text-xs">{s.date}</TableCell>
+                        <TableCell className="font-mono text-xs font-medium">{s.reference}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={s.description}>
+                          {s.description}
+                        </TableCell>
+                        <TableCell className={`font-mono text-xs font-bold text-right ${isDr ? "text-rose-600" : "text-emerald-600"}`}>
+                          {isDr ? "-" : "+"}₹{amt.toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge
+                            className={
+                              s.status === "MATCHED"
+                                ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]"
+                                : "bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]"
+                            }
+                          >
+                            {s.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* General Ledger Book Vouchers */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold">General Ledger Bank Vouchers</CardTitle>
+              <CardDescription>Internal book entries awaiting statement clearance</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {bookEntries.length === 0 ? (
+              <div className="p-6">
+                <CorporateEmptyState
+                  icon={Layers}
+                  title="No Bank Entries Recorded"
+                  description="Post receipts or payment vouchers linked to bank accounts to reconcile."
+                />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Voucher No</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Particulars</TableHead>
+                    <TableHead className="text-right">Amount (₹)</TableHead>
+                    <TableHead className="text-center">Type</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bookEntries.map((b) => (
+                    <TableRow key={b.voucherId}>
+                      <TableCell className="font-mono text-xs font-semibold">{b.voucherNumber}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">{b.voucherDate}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground max-w-[140px] truncate" title={b.particulars}>
+                        {b.particulars}
                       </TableCell>
-                      <TableCell className="text-xs font-medium max-w-xs truncate">
-                        {item.description}
-                      </TableCell>
-                      <TableCell className="text-xs font-mono text-muted-foreground">
-                        {item.referenceNumber}
-                      </TableCell>
-                      <TableCell className="text-xs font-mono font-bold text-right">
-                        {item.type === "DEBIT" ? "−" : ""}₹{item.amount.toLocaleString("en-IN")}
+                      <TableCell className="font-mono text-xs font-bold text-right">
+                        ₹{b.amount.toLocaleString("en-IN")}
                       </TableCell>
                       <TableCell className="text-center">
-                        {item.status === "RECONCILED" ? (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-300"
-                          >
-                            Reconciled
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-amber-50 text-amber-800 border-amber-300"
-                          >
-                            Unreconciled
-                          </Badge>
-                        )}
+                        <Badge variant="outline" className="text-[10px]">
+                          {b.entryType}
+                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -259,6 +270,48 @@ export function ConnectedBankingView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Upload Statement Dialog */}
+      <Dialog open={isUploading} onOpenChange={setIsUploading}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Bank Statement (CSV/MT940)</DialogTitle>
+            <DialogDescription>
+              Paste CSV bank statement records with columns: Date, Description, Reference, Debit, Credit, Balance.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUploadCsv} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold">Select Bank Ledger Account</label>
+              <select
+                value={selectedBankId}
+                onChange={(e) => setSelectedBankId(e.target.value)}
+                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs font-semibold"
+                required
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.bankName} - A/c {a.accountNumber}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold">CSV Statement Content</label>
+              <Textarea
+                value={csvContent}
+                onChange={(e) => setCsvContent(e.target.value)}
+                placeholder={`Date,Description,Reference,Debit,Credit,Balance\n2026-08-04,UltraTech Cement Vendor,NEFT-HDFC-991,2850000,0,2150000\n2026-08-04,Plot Buyer Advance Token,IMPS-778899,0,150000,2300000`}
+                className="font-mono text-xs min-h-[140px]"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full font-bold">
+              Parse & Ingest Statement Transactions
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

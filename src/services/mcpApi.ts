@@ -122,6 +122,20 @@ export const mcpApi = {
     return fetchEnvelope<McpRegisteredTool[]>(`${API_BASE}/tools`);
   },
 
+  async registerTool(payload: {
+    toolName: string;
+    targetModule: string;
+    description: string;
+    isMutative?: boolean;
+    requiresHitl?: boolean;
+    schemaInput?: string | Record<string, unknown>;
+  }): Promise<McpRegisteredTool> {
+    return fetchEnvelope<McpRegisteredTool>(`${API_BASE}/tools`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getSessions(): Promise<McpAgentSession[]> {
     return fetchEnvelope<McpAgentSession[]>(`${API_BASE}/sessions`);
   },

@@ -40,10 +40,10 @@ export function ReraComplianceView() {
             MahaRERA Statutory Compliance & 70% Escrow Audit Engine
           </h3>
         </div>
-      <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
-        <Plus className="h-3.5 w-3.5" />
-        File Registration
-      </Button>
+        <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          File Registration
+        </Button>
       </div>
 
       {isLoading ? (
@@ -83,10 +83,17 @@ export function ReraComplianceView() {
             <TableBody>
               {reraList.map((r) => {
                 let badgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-300";
-                if (r.certificateAuditStatus === "Pending Certification") {
+                if (r.certificateAuditStatus === "Pending Certification" || r.certificateAuditStatus === "Under Review") {
                   badgeStyle = "bg-amber-100 text-amber-800 border-amber-300";
-                } else if (r.certificateAuditStatus === "Overdue Filing") {
+                } else if (r.certificateAuditStatus === "Overdue Filing" || r.certificateAuditStatus === "Lapsed") {
                   badgeStyle = "bg-rose-100 text-rose-800 border-rose-300";
+                }
+
+                let qStyle = "bg-emerald-100 text-emerald-800 border-emerald-300";
+                if (r.quarterlyReturnStatus === "PENDING" || r.quarterlyReturnStatus === "PENDING_FILING") {
+                  qStyle = "bg-amber-100 text-amber-800 border-amber-300";
+                } else if (r.quarterlyReturnStatus === "OVERDUE") {
+                  qStyle = "bg-rose-100 text-rose-800 border-rose-300";
                 }
 
                 return (
@@ -97,8 +104,10 @@ export function ReraComplianceView() {
                     <TableCell className="text-xs py-3 font-mono font-bold text-foreground">
                       {r.reraRegReference}
                     </TableCell>
-                    <TableCell className="text-xs py-3 text-center font-mono font-bold text-foreground">
-                      {r.quarterlyReturnStatus}
+                    <TableCell className="text-xs py-3 text-center">
+                      <Badge variant="outline" className={`text-[10px] font-mono font-bold ${qStyle}`}>
+                        {r.quarterlyReturnStatus}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-xs py-3 text-right font-mono font-bold text-primary text-sm">
                       ₹{r.escrowBalanceLakhs.toFixed(2)} Lakhs
@@ -132,6 +141,10 @@ export function ReraComplianceView() {
         title="Record MahaRERA Registration"
         endpoint="/api/v1/legal/rera"
         submitLabel="Record Registration"
+        transform={(vals) => ({
+          ...vals,
+          escrowBalanceLakhs: Number(vals.escrowBalanceLakhs) || 0,
+        })}
         fields={[
           { name: "projectName", label: "Development", type: "text", required: true },
           { name: "reraRegReference", label: "MahaRERA Reference", type: "text", required: true, halfWidth: true },

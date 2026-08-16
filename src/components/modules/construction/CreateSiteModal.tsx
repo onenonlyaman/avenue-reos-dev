@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Building2 } from "lucide-react";
+import { constructionApi } from "@/services/constructionApi";
 
 interface CreateSiteModalProps {
   isOpen: boolean;
@@ -22,6 +23,8 @@ export function CreateSiteModal({
   const [projectName, setProjectName] = useState<string>("");
   const [location, setLocation] = useState<string>("");
   const [projectCode, setProjectCode] = useState<string>("");
+  const [siteName, setSiteName] = useState<string>("");
+  const [gpsCoordinates, setGpsCoordinates] = useState<string>("");
   const [totalAreaSqft, setTotalAreaSqft] = useState<number | "">("");
   const [totalBudgetCr, setTotalBudgetCr] = useState<number | "">("");
   const [startDate, setStartDate] = useState<string>("");
@@ -35,19 +38,20 @@ export function CreateSiteModal({
       setIsSubmitting(true);
       setError(null);
 
-      if (!projectName) throw new Error("Project development name is required.");
-      if (!location) throw new Error("Site location is required.");
+      if (!projectName.trim()) throw new Error("Project development name is required.");
+      if (!location.trim()) throw new Error("Site location is required.");
       if (typeof totalAreaSqft !== "number") throw new Error("Total saleable area is required.");
       if (typeof totalBudgetCr !== "number") throw new Error("Sanctioned project budget is required.");
       if (!expectedCompletionDate) throw new Error("Target completion date is required.");
 
+      // 1. Create the master project
       const res = await fetch("/api/v1/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectCode: projectCode || undefined,
-          projectName,
-          location,
+          projectName: projectName.trim(),
+          location: location.trim(),
           totalAreaSqft,
           totalBudget: totalBudgetCr * 10000000,
           startDate: startDate || undefined,
@@ -56,13 +60,28 @@ export function CreateSiteModal({
       });
 
       const json = await res.json();
-      if (!json.success) throw new Error(json.error?.message || "New construction site could not be saved");
+      if (!json.success) throw new Error(json.error?.message || "New project development could not be saved");
+
+      const createdProject = json.data;
+
+      // 2. Create the construction site entry linked to the project
+      await constructionApi.createSite({
+        projectId: createdProject.id,
+        siteName: siteName.trim() || `${projectName.trim()} Site Alpha`,
+        siteCode: projectCode ? `SITE-${projectCode.replace(/^PRJ-/, '')}` : undefined,
+        gpsCoordinates: gpsCoordinates.trim() || `${location.trim()} (Nashik)`,
+        status: "ACTIVE",
+      });
 
       onSiteCreated();
       onClose();
       setProjectName("");
       setLocation("");
       setProjectCode("");
+      setSiteName("");
+      setGpsCoordinates("");
+      setTotalAreaSqft("");
+      setTotalBudgetCr("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Construction site could not be saved");
     } finally {
@@ -79,7 +98,7 @@ export function CreateSiteModal({
               REAL ESTATE SITE PROVISIONING
             </Badge>
             <span className="text-xs text-muted-foreground font-mono">
-              MASTER RECORD REGISTRATION
+              MASTER RECORD & SITE REGISTRATION
             </span>
           </div>
           <DialogTitle className="text-base font-bold font-heading flex items-center gap-2">
@@ -102,20 +121,35 @@ export function CreateSiteModal({
             <Label className="text-xs font-medium">Project Name</Label>
             <Input
               value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
+              onChange={(e) => {
+                setProjectName(e.target.value);
+                if (!siteName) setSiteName(`${e.target.value} Main Site`);
+              }}
               placeholder="e.g. Avenue Grandeur"
               className="h-8 text-xs"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Location / Area</Label>
-            <Input
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g. Gangapur Road, Nashik"
-              className="h-8 text-xs"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Site Office Name</Label>
+              <Input
+                value={siteName}
+                onChange={(e) => setSiteName(e.target.value)}
+                placeholder="e.g. Grandeur Site Alpha"
+                className="h-8 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Location / Area</Label>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g. Gangapur Road, Nashik"
+                className="h-8 text-xs"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -130,6 +164,18 @@ export function CreateSiteModal({
             </div>
 
             <div className="space-y-1.5">
+              <Label className="text-xs font-medium">GPS Coordinates</Label>
+              <Input
+                value={gpsCoordinates}
+                onChange={(e) => setGpsCoordinates(e.target.value)}
+                placeholder="e.g. 19.9975° N, 73.7898° E"
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
               <Label className="text-xs font-medium">Total Area (Sq.Ft.)</Label>
               <Input
                 type="number"
@@ -138,18 +184,18 @@ export function CreateSiteModal({
                 className="h-8 text-xs font-mono"
               />
             </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium">Total Estimated Budget (₹ Cr)</Label>
-            <Input
-              type="number"
-              step="0.5"
-              value={totalBudgetCr}
-              onChange={(e) => setTotalBudgetCr(e.target.value ? parseFloat(e.target.value) : "")}
-              placeholder="e.g. 45.00"
-              className="h-8 text-xs font-mono"
-            />
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Budget (₹ Cr)</Label>
+              <Input
+                type="number"
+                step="0.5"
+                value={totalBudgetCr}
+                onChange={(e) => setTotalBudgetCr(e.target.value ? parseFloat(e.target.value) : "")}
+                placeholder="e.g. 45.00"
+                className="h-8 text-xs font-mono"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

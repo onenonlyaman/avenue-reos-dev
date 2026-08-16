@@ -9,22 +9,28 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
 import { FileCheck2, Plus, AlertCircle, Loader2 } from "lucide-react";
-import { procurementApi, GoodsReceiptNote, CreateGrnPayload } from "@/services/procurementApi";
+import { procurementApi, GoodsReceiptNote, CreateGrnPayload, PurchaseOrder } from "@/services/procurementApi";
 
-export function GoodsReceiptView() {
+interface GoodsReceiptViewProps {
+  refreshKey?: number;
+  onRefreshNeeded?: () => void;
+}
+
+export function GoodsReceiptView({ refreshKey, onRefreshNeeded }: GoodsReceiptViewProps) {
   const [grnList, setGrnList] = useState<GoodsReceiptNote[]>([]);
+  const [activeOrders, setActiveOrders] = useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  const [orderReference, setOrderReference] = useState<string>("PO-849201");
-  const [warehouseName, setWarehouseName] = useState<string>("Avenue Horizon Site Warehouse");
-  const [vendorName, setVendorName] = useState<string>("UltraTech Cement - Nashik Depot");
-  const [materialName, setMaterialName] = useState<string>("OPC 53 Grade Cement Bags");
-  const [acceptedQuantity, setAcceptedQuantity] = useState<number | "">(480);
-  const [rejectedQuantity, setRejectedQuantity] = useState<number | "">(20);
-  const [unitOfMeasure, setUnitOfMeasure] = useState<string>("Bags");
-  const [gatepassNumber, setGatepassNumber] = useState<string>("GP-MH15-8821");
+  const [orderReference, setOrderReference] = useState<string>("");
+  const [warehouseName, setWarehouseName] = useState<string>("");
+  const [vendorName, setVendorName] = useState<string>("");
+  const [materialName, setMaterialName] = useState<string>("");
+  const [acceptedQuantity, setAcceptedQuantity] = useState<number | "">("");
+  const [rejectedQuantity, setRejectedQuantity] = useState<number | "">(0);
+  const [unitOfMeasure, setUnitOfMeasure] = useState<string>("Units");
+  const [gatepassNumber, setGatepassNumber] = useState<string>("");
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -33,8 +39,12 @@ export function GoodsReceiptView() {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await procurementApi.getGoodsReceiptNotes();
-      setGrnList(data);
+      const [grnData, ordersData] = await Promise.all([
+        procurementApi.getGoodsReceiptNotes(),
+        procurementApi.getPurchaseOrders().catch(() => [] as PurchaseOrder[]),
+      ]);
+      setGrnList(grnData);
+      setActiveOrders(ordersData);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Goods Receipt Notes could not be loaded");
     } finally {
@@ -44,31 +54,63 @@ export function GoodsReceiptView() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [refreshKey]);
+
+  const handleSelectPo = (poRef: string) => {
+    setOrderReference(poRef);
+    const found = activeOrders.find((o) => o.orderReference.toLowerCase() === poRef.toLowerCase());
+    if (found) {
+      setWarehouseName(found.siteName);
+      setVendorName(found.vendorName);
+      setMaterialName(found.materialDescription);
+      setAcceptedQuantity(found.quantity);
+    }
+  };
+
+  const handleOpenModal = () => {
+    setModalError(null);
+    setOrderReference("");
+    setWarehouseName("");
+    setVendorName("");
+    setMaterialName("");
+    setAcceptedQuantity("");
+    setRejectedQuantity(0);
+    setUnitOfMeasure("Units");
+    setGatepassNumber("");
+    setIsModalOpen(true);
+  };
 
   const handleCreateGrn = async () => {
     try {
       setIsSubmitting(true);
       setModalError(null);
 
-      if (!orderReference) throw new Error("Purchase order reference is required.");
-      if (!warehouseName) throw new Error("Warehouse location is required.");
-      if (!materialName) throw new Error("Material description is required.");
+      if (!orderReference.trim()) throw new Error("Purchase order reference is required.");
+      if (!warehouseName.trim()) throw new Error("Warehouse location is required.");
+      if (!materialName.trim()) throw new Error("Material description is required.");
+
+      const accepted = typeof acceptedQuantity === "number" ? Math.max(0, acceptedQuantity) : 0;
+      const rejected = typeof rejectedQuantity === "number" ? Math.max(0, rejectedQuantity) : 0;
+
+      if (accepted + rejected <= 0) {
+        throw new Error("Please enter accepted or rejected quantities greater than 0.");
+      }
 
       const payload: CreateGrnPayload = {
-        orderReference,
-        warehouseName,
-        vendorName,
-        materialName,
-        acceptedQuantity: typeof acceptedQuantity === "number" ? acceptedQuantity : 0,
-        rejectedQuantity: typeof rejectedQuantity === "number" ? rejectedQuantity : 0,
-        unitOfMeasure,
-        gatepassNumber,
+        orderReference: orderReference.trim(),
+        warehouseName: warehouseName.trim(),
+        vendorName: vendorName.trim() || "Supplier",
+        materialName: materialName.trim(),
+        acceptedQuantity: accepted,
+        rejectedQuantity: rejected,
+        unitOfMeasure: unitOfMeasure.trim() || "Units",
+        gatepassNumber: gatepassNumber.trim(),
       };
 
       await procurementApi.createGoodsReceiptNote(payload);
       setIsModalOpen(false);
       loadData();
+      if (onRefreshNeeded) onRefreshNeeded();
     } catch (err: unknown) {
       setModalError(err instanceof Error ? err.message : "Goods Receipt Note could not be saved");
     } finally {
@@ -81,14 +123,14 @@ export function GoodsReceiptView() {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border border-border shadow-xs">
         <div>
           <h3 className="text-sm font-bold font-heading text-foreground">
-            Goods Receipt Notes (GRN) & Gatepass Log
+            Goods Receipt Notes (GRN) & Gatepass Inspection Ledger
           </h3>
         </div>
 
         <Button
           size="sm"
           className="h-9 text-xs gap-1.5 font-medium shrink-0"
-          onClick={() => setIsModalOpen(true)}
+          onClick={handleOpenModal}
         >
           <Plus className="h-3.5 w-3.5" />
           Log Goods Receipt
@@ -113,11 +155,11 @@ export function GoodsReceiptView() {
           title="No Goods Receipt Notes Recorded"
           description="There are currently no gatepass material receipts logged in the system."
           actionLabel="Log Goods Receipt"
-          onAction={() => setIsModalOpen(true)}
+          onAction={handleOpenModal}
           icon={FileCheck2}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -128,7 +170,7 @@ export function GoodsReceiptView() {
                 <TableHead className="text-xs font-semibold">Material Name</TableHead>
                 <TableHead className="text-xs font-semibold text-right">Accepted Qty</TableHead>
                 <TableHead className="text-xs font-semibold text-right">Rejected Qty</TableHead>
-                <TableHead className="text-xs font-semibold text-center">Gatepass Vehicle</TableHead>
+                <TableHead className="text-xs font-semibold text-center">Gatepass Number</TableHead>
                 <TableHead className="text-xs font-semibold text-center">Inspection Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -163,10 +205,10 @@ export function GoodsReceiptView() {
                       {g.materialName}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-right font-mono font-bold text-emerald-800">
-                      {g.acceptedQuantity} {g.unitOfMeasure}
+                      {g.acceptedQuantity.toLocaleString("en-IN")} {g.unitOfMeasure}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-right font-mono font-bold text-rose-800">
-                      {g.rejectedQuantity > 0 ? `${g.rejectedQuantity} ${g.unitOfMeasure}` : "0"}
+                      {g.rejectedQuantity > 0 ? `${g.rejectedQuantity.toLocaleString("en-IN")} ${g.unitOfMeasure}` : "0"}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center font-mono text-muted-foreground">
                       {g.gatepassNumber}
@@ -198,14 +240,14 @@ export function GoodsReceiptView() {
             <DialogTitle className="text-base font-bold font-heading">
               Log Goods Receipt Note (GRN)
             </DialogTitle>
-            <DialogDescription className="sr-only">
+            <DialogDescription className="text-xs text-muted-foreground">
               Record physical material delivery count and quality inspection results at site warehouse.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2 text-xs">
             {modalError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-xs">
+              <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-xs font-medium">
                 {modalError}
               </div>
             )}
@@ -215,10 +257,18 @@ export function GoodsReceiptView() {
                 <Label className="text-xs font-medium">Purchase Order Reference</Label>
                 <Input
                   value={orderReference}
-                  onChange={(e) => setOrderReference(e.target.value)}
-                  placeholder="e.g. PO-849201"
+                  onChange={(e) => handleSelectPo(e.target.value)}
+                  placeholder="e.g. PO-20260815-A1B2"
+                  list="active-po-options"
                   className="h-8 text-xs font-mono"
                 />
+                <datalist id="active-po-options">
+                  {activeOrders.map((o) => (
+                    <option key={o.id} value={o.orderReference}>
+                      {o.vendorName} - {o.materialDescription}
+                    </option>
+                  ))}
+                </datalist>
               </div>
 
               <div className="space-y-1.5">
@@ -237,7 +287,7 @@ export function GoodsReceiptView() {
               <Input
                 value={warehouseName}
                 onChange={(e) => setWarehouseName(e.target.value)}
-                placeholder="e.g. Avenue Horizon Site Warehouse"
+                placeholder="e.g. Central Site Warehouse"
                 className="h-8 text-xs"
               />
             </div>
@@ -269,9 +319,11 @@ export function GoodsReceiptView() {
                 <Label className="text-xs font-medium">Accepted Qty</Label>
                 <Input
                   type="number"
+                  min="0"
                   value={acceptedQuantity}
                   onChange={(e) => setAcceptedQuantity(e.target.value ? parseFloat(e.target.value) : "")}
-                  className="h-8 text-xs font-mono font-bold"
+                  placeholder="0"
+                  className="h-8 text-xs font-mono font-bold text-emerald-800"
                 />
               </div>
 
@@ -279,8 +331,10 @@ export function GoodsReceiptView() {
                 <Label className="text-xs font-medium">Rejected Qty</Label>
                 <Input
                   type="number"
+                  min="0"
                   value={rejectedQuantity}
                   onChange={(e) => setRejectedQuantity(e.target.value ? parseFloat(e.target.value) : "")}
+                  placeholder="0"
                   className="h-8 text-xs font-mono font-bold text-rose-700"
                 />
               </div>

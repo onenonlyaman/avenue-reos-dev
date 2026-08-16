@@ -3,11 +3,12 @@
 import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { ShieldCheck, AlertCircle, Loader2 , Plus } from "lucide-react";
+import { ShieldCheck, AlertCircle, Loader2, Plus, RefreshCw, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { facilityApi, FacilityAsset } from "@/services/facilityApi";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
-import { Button } from "@/components/ui/button";
 
 export function FacilityAssetsView() {
   const [assets, setAssets] = useState<FacilityAsset[]>([]);
@@ -32,6 +33,11 @@ export function FacilityAssetsView() {
     loadData();
   }, []);
 
+  const totalAssets = assets.length;
+  const operationalCount = assets.filter((a) => a.operatingStatus === "OPERATIONAL").length;
+  const serviceDueCount = assets.filter((a) => a.operatingStatus === "NEEDS_SERVICE" || a.operatingStatus === "DOWN").length;
+  const totalAmcValue = assets.reduce((sum, a) => sum + (a.maintenanceCost || 0), 0);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border border-border shadow-xs">
@@ -39,11 +45,65 @@ export function FacilityAssetsView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Facility Infrastructure & Asset AMC Register
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Physical infrastructure equipment, warranty tracking, and annual maintenance contracts
+          </p>
         </div>
-      <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
-        <Plus className="h-3.5 w-3.5" />
-        Register Asset
-      </Button>
+
+        <div className="flex items-center gap-2">
+          <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Register Asset
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1 font-medium"
+            onClick={loadData}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <CorporateStatCard
+          label="Total Infrastructure Assets"
+          value={`${totalAssets} Equipment`}
+          subtext="Maintained facility infrastructure"
+          icon={ShieldCheck}
+          trend="Registered"
+          trendDirection="neutral"
+        />
+
+        <CorporateStatCard
+          label="Fully Operational"
+          value={`${operationalCount} Units`}
+          subtext="100% functional operating status"
+          icon={CheckCircle2}
+          trend="Healthy"
+          trendDirection="up"
+        />
+
+        <CorporateStatCard
+          label="Service & Warranty Due"
+          value={`${serviceDueCount} Items`}
+          subtext="Requires technician inspection"
+          icon={AlertTriangle}
+          trend={serviceDueCount > 0 ? "Maintenance Due" : "All Clear"}
+          trendDirection={serviceDueCount > 0 ? "down" : "up"}
+        />
+
+        <CorporateStatCard
+          label="Total AMC Contract Value"
+          value={`₹${totalAmcValue.toLocaleString("en-IN")}`}
+          subtext="Annualized contractor retainers"
+          icon={ShieldAlert}
+          trend="Contracted"
+          trendDirection="neutral"
+        />
       </div>
 
       {isLoading ? (
@@ -76,6 +136,7 @@ export function FacilityAssetsView() {
                 <TableHead className="text-xs font-semibold">Location / Site</TableHead>
                 <TableHead className="text-xs font-semibold">Category</TableHead>
                 <TableHead className="text-xs font-semibold">AMC Provider Name</TableHead>
+                <TableHead className="text-xs font-semibold text-right">Annual AMC (₹)</TableHead>
                 <TableHead className="text-xs font-semibold text-center">Warranty Expiry</TableHead>
                 <TableHead className="text-xs font-semibold text-center">Last Service Date</TableHead>
                 <TableHead className="text-xs font-semibold text-center">Status</TableHead>
@@ -106,13 +167,16 @@ export function FacilityAssetsView() {
                       {a.category}
                     </TableCell>
                     <TableCell className="text-xs py-3 font-medium text-foreground">
-                      {a.amcProviderName}
+                      {a.amcProviderName || "None Assigned"}
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
+                      ₹{(a.maintenanceCost || 0).toLocaleString("en-IN")}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center font-mono text-muted-foreground">
-                      {a.warrantyExpiryDate}
+                      {a.warrantyExpiryDate || "N/A"}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center font-mono text-muted-foreground">
-                      {a.lastServiceDate}
+                      {a.lastServiceDate || "N/A"}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center">
                       <Badge variant="outline" className={`text-[10px] font-bold ${badgeStyle}`}>

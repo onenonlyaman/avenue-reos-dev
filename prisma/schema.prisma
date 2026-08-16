@@ -424,3 +424,279 @@ model QualityNcrReport {
   @@index([tenantId, status])
   @@map("quality_ncr_reports")
 }
+
+model PurchaseOrder {
+  id                  String    @id @default(uuid()) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  orderReference      String    @map("order_reference") @db.VarChar(100)
+  siteName            String    @map("site_name") @db.VarChar(255)
+  vendorName          String    @map("vendor_name") @db.VarChar(255)
+  materialDescription String    @map("material_description") @db.VarChar(255)
+  quantity            Decimal   @db.Decimal(15, 2)
+  unitRate            Decimal   @map("unit_rate") @db.Decimal(15, 2)
+  freightAmount       Decimal   @default(0.00) @map("freight_amount") @db.Decimal(15, 2)
+  gstAmount           Decimal   @default(0.00) @map("gst_amount") @db.Decimal(15, 2)
+  orderValueAmount    Decimal   @map("order_value_amount") @db.Decimal(15, 2)
+  deliveryDueDate     DateTime  @map("delivery_due_date") @db.Date
+  requiresHitl        Boolean   @default(false) @map("requires_hitl")
+  status              String    @db.VarChar(50)
+  rejectionReason     String?   @map("rejection_reason") @db.Text
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, orderReference], name: "uq_po_reference")
+  @@index([tenantId, status])
+  @@index([tenantId, vendorName])
+  @@map("purchase_orders")
+}
+
+model GoodsReceiptNote {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  grnReference     String   @map("grn_reference") @db.VarChar(100)
+  orderReference   String   @map("order_reference") @db.VarChar(100)
+  warehouseName    String   @map("warehouse_name") @db.VarChar(255)
+  vendorName       String   @map("vendor_name") @db.VarChar(255)
+  materialName     String   @map("material_name") @db.VarChar(255)
+  acceptedQuantity Decimal  @map("accepted_quantity") @db.Decimal(15, 2)
+  rejectedQuantity Decimal  @default(0.00) @map("rejected_quantity") @db.Decimal(15, 2)
+  unitOfMeasure    String   @default("Units") @map("unit_of_measure") @db.VarChar(50)
+  inspectionStatus String   @default("PASSED") @map("inspection_status") @db.VarChar(50)
+  gatepassNumber   String   @map("gatepass_number") @db.VarChar(100)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, grnReference], name: "uq_grn_reference")
+  @@index([tenantId, orderReference])
+  @@index([tenantId, warehouseName])
+  @@map("goods_receipt_notes")
+}
+
+model WarehouseInventory {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  category          String   @db.VarChar(100)
+  itemDescription   String   @map("item_description") @db.VarChar(255)
+  storageLocation   String   @map("storage_location") @db.VarChar(255)
+  availableQuantity Decimal  @default(0.00) @map("available_quantity") @db.Decimal(15, 2)
+  unitOfMeasure     String   @default("Units") @map("unit_of_measure") @db.VarChar(50)
+  reorderLevel      Decimal  @default(0.00) @map("reorder_level") @db.Decimal(15, 2)
+  unitCost          Decimal  @default(0.00) @map("unit_cost") @db.Decimal(15, 2)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, itemDescription, storageLocation], name: "uq_inventory_item_location")
+  @@index([tenantId, category])
+  @@map("warehouse_inventory")
+}
+
+model UnitHandover {
+  id                      String   @id @default(uuid()) @db.Uuid
+  tenantId                String   @map("tenant_id") @db.Uuid
+  handoverReference       String   @map("handover_reference") @db.VarChar(100)
+  unitName                String   @map("unit_name") @db.VarChar(255)
+  buyerName               String   @map("buyer_name") @db.VarChar(255)
+  desnaggingCompletionPct Decimal  @default(0.00) @map("desnagging_completion_pct") @db.Decimal(5, 2)
+  financialNocCleared     Boolean  @default(false) @map("financial_noc_cleared")
+  outstandingBalance      Decimal  @default(0.00) @map("outstanding_balance") @db.Decimal(15, 2)
+  targetHandoverDate      DateTime @map("target_handover_date") @db.Date
+  requiresHitl            Boolean  @default(false) @map("requires_hitl")
+  status                  String   @db.VarChar(50)
+  rejectionReason         String?  @map("rejection_reason") @db.Text
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, handoverReference], name: "uq_handover_ref")
+  @@index([tenantId, status])
+  @@index([tenantId, requiresHitl])
+  @@map("unit_handovers")
+}
+
+model CamInvoice {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  invoiceReference String   @map("invoice_reference") @db.VarChar(100)
+  unitName         String   @map("unit_name") @db.VarChar(255)
+  superBuiltupSqft Decimal  @map("super_builtup_sqft") @db.Decimal(15, 2)
+  billingPeriod    String   @map("billing_period") @db.VarChar(50)
+  baseCamAmount    Decimal  @map("base_cam_amount") @db.Decimal(15, 2)
+  gstAmount        Decimal  @map("gst_amount") @db.Decimal(15, 2)
+  totalDueAmount   Decimal  @map("total_due_amount") @db.Decimal(15, 2)
+  paymentStatus    String   @default("UNPAID") @map("payment_status") @db.VarChar(50)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, invoiceReference], name: "uq_cam_invoice_ref")
+  @@unique([tenantId, unitName, billingPeriod], name: "uq_cam_unit_period")
+  @@index([tenantId, paymentStatus])
+  @@index([tenantId, billingPeriod])
+  @@map("cam_invoices")
+}
+
+model FacilityAsset {
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenantId           String    @map("tenant_id") @db.Uuid
+  assetDescription   String    @map("asset_description") @db.VarChar(255)
+  locationName       String    @map("location_name") @db.VarChar(255)
+  category           String    @db.VarChar(100)
+  amcProviderName    String?   @map("amc_provider_name") @db.VarChar(255)
+  warrantyExpiryDate DateTime? @map("warranty_expiry_date") @db.Date
+  lastServiceDate    DateTime? @map("last_service_date") @db.Date
+  operatingStatus    String    @default("OPERATIONAL") @map("operating_status") @db.VarChar(50)
+  maintenanceCost    Decimal   @default(0.00) @map("maintenance_cost") @db.Decimal(15, 2)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, operatingStatus])
+  @@index([tenantId, category])
+  @@map("facility_assets")
+}
+
+model MaintenanceTicket {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  ticketReference    String   @map("ticket_reference") @db.VarChar(100)
+  ticketSummary      String   @map("ticket_summary") @db.VarChar(500)
+  propertyLocation   String   @map("property_location") @db.VarChar(255)
+  category           String   @db.VarChar(100)
+  priority           String   @default("Moderate") @db.VarChar(50)
+  slaStatus          String   @default("Within SLA") @map("sla_status") @db.VarChar(50)
+  assignedContractor String?  @map("assigned_contractor") @db.VarChar(255)
+  status             String   @default("OPEN") @db.VarChar(50)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, ticketReference], name: "uq_ticket_reference")
+  @@index([tenantId, status])
+  @@index([tenantId, priority])
+  @@index([tenantId, slaStatus])
+  @@map("maintenance_tickets")
+}
+
+model AnalyticsLiquidity {
+  id                        String   @id @default(uuid()) @db.Uuid
+  tenantId                  String   @map("tenant_id") @db.Uuid
+  operatingPeriod           String   @map("operating_period") @db.VarChar(50)
+  customerInflowsLakhs      Decimal  @map("customer_inflows_lakhs") @db.Decimal(15, 2)
+  vendorOutflowsLakhs       Decimal  @map("vendor_outflows_lakhs") @db.Decimal(15, 2)
+  debtServiceLakhs          Decimal  @map("debt_service_lakhs") @db.Decimal(15, 2)
+  netOperatingCashflowLakhs Decimal  @map("net_operating_cashflow_lakhs") @db.Decimal(15, 2)
+  dscrRatio                 Decimal  @map("dscr_ratio") @db.Decimal(5, 2)
+  solvencyStatus            String   @map("solvency_status") @db.VarChar(50)
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                 DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("analytics_liquidity")
+}
+
+model EnterpriseRisk {
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  riskCategory          String   @map("risk_category") @db.VarChar(100)
+  associatedProjectSite String   @map("associated_project_site") @db.VarChar(255)
+  riskVectorSummary     String   @map("risk_vector_summary") @db.VarChar(255)
+  impactRating          String   @default("MEDIUM") @map("impact_rating") @db.VarChar(50)
+  mitigationActionPlan  String   @map("mitigation_action_plan") @db.Text
+  riskLevel             String   @default("Medium") @map("risk_level") @db.VarChar(50)
+  requiresHitl          Boolean  @default(false) @map("requires_hitl")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, riskLevel])
+  @@map("enterprise_risks")
+}
+
+model CapitalAllocationRequest {
+  id                    String    @id @default(uuid()) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  requestReference      String    @map("request_reference") @db.VarChar(100)
+  projectName           String    @map("project_name") @db.VarChar(255)
+  requestedCapitalLakhs Decimal   @map("requested_capital_lakhs") @db.Decimal(15, 2)
+  allocationPurpose     String    @map("allocation_purpose") @db.VarChar(255)
+  riskRating            String    @default("Medium") @map("risk_rating") @db.VarChar(50)
+  requiresHitl          Boolean   @default(true) @map("requires_hitl")
+  status                String    @default("PENDING_BOARD_APPROVAL") @db.VarChar(50)
+  rejectionReason       String?   @map("rejection_reason") @db.Text
+  reviewedBy            String?   @map("reviewed_by") @db.VarChar(255)
+  reviewedAt            DateTime? @map("reviewed_at") @db.Timestamptz
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, requestReference], name: "uq_capital_allocation_ref")
+  @@index([tenantId, status])
+  @@index([tenantId, requiresHitl])
+  @@map("capital_allocation_requests")
+}
+
+model SystemUser {
+  id                String               @id @default(uuid()) @db.Uuid
+  tenantId          String               @map("tenant_id") @db.Uuid
+  fullName          String               @map("full_name") @db.VarChar(255)
+  email             String               @unique @db.VarChar(255)
+  passwordHash      String               @map("password_hash") @db.VarChar(255)
+  department        String               @db.VarChar(100)
+  designation       String               @db.VarChar(100)
+  siteLocation      String               @default("Nashik Corporate Office") @map("site_location") @db.VarChar(255)
+  mfaEnabled        Boolean              @default(false) @map("mfa_enabled")
+  status            String               @default("PENDING_APPROVAL") @db.VarChar(50)
+  role              String               @default("Site Engineer") @db.VarChar(100)
+  lastActive        DateTime             @default(now()) @map("last_active") @db.Timestamptz
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  mustResetPassword Boolean              @default(false) @map("must_reset_password")
+  failedLoginCount  Int                  @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?            @map("locked_until") @db.Timestamptz
+  passwordChangedAt DateTime?            @map("password_changed_at") @db.Timestamptz
+  sessions          SystemSession[]
+  resetTokens       PasswordResetToken[]
+
+  @@unique([tenantId, email], name: "uq_system_users_tenant_email")
+  @@index([tenantId, status])
+  @@map("system_users")
+}
+
+model SystemSession {
+  id                String     @id @default(uuid()) @db.Uuid
+  userId            String     @map("user_id") @db.Uuid
+  tenantId          String     @map("tenant_id") @db.Uuid
+  tokenHash         String     @unique @map("token_hash") @db.Char(64)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  lastSeenAt        DateTime   @default(now()) @map("last_seen_at") @db.Timestamptz
+  expiresAt         DateTime   @map("expires_at") @db.Timestamptz
+  absoluteExpiresAt DateTime   @map("absolute_expires_at") @db.Timestamptz
+  revokedAt         DateTime?  @map("revoked_at") @db.Timestamptz
+  userAgent         String     @default("unknown") @map("user_agent") @db.VarChar(255)
+  ipAddress         String     @default("unknown") @map("ip_address") @db.VarChar(100)
+  user              SystemUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("system_sessions")
+}
+
+model PasswordResetToken {
+  id          String     @id @default(uuid()) @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  tokenHash   String     @unique @map("token_hash") @db.Char(64)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt   DateTime   @map("expires_at") @db.Timestamptz
+  consumedAt  DateTime?  @map("consumed_at") @db.Timestamptz
+  requestedIp String     @default("unknown") @map("requested_ip") @db.VarChar(100)
+  user        SystemUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model AuthLoginAttempt {
+  id          BigInt   @id @default(autoincrement())
+  identifier  String   @db.VarChar(255)
+  ipAddress   String   @default("unknown") @map("ip_address") @db.VarChar(100)
+  succeeded   Boolean  @default(false)
+  attemptedAt DateTime @default(now()) @map("attempted_at") @db.Timestamptz
+
+  @@index([identifier, attemptedAt(sort: Desc)])
+  @@index([ipAddress, attemptedAt(sort: Desc)])
+  @@map("auth_login_attempts")
+}

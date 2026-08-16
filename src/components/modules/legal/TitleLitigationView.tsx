@@ -40,10 +40,10 @@ export function TitleLitigationView() {
             30-Year Title Search & Encumbrance Audit Register
           </h3>
         </div>
-      <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
-        <Plus className="h-3.5 w-3.5" />
-        Record Title Search
-      </Button>
+        <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          Record Title Search
+        </Button>
       </div>
 
       {isLoading ? (
@@ -134,14 +134,20 @@ export function TitleLitigationView() {
         title="Record Title Search"
         endpoint="/api/v1/legal/title-searches"
         submitLabel="Record Search"
+        transform={(vals) => ({
+          ...vals,
+          searchPeriodYears: Number(vals.searchPeriodYears) || 30,
+        })}
         fields={[
           { name: "surveyNumber", label: "Survey Number", type: "text", required: true, halfWidth: true },
           { name: "legalAdvocate", label: "Appointed Advocate", type: "text", required: true, halfWidth: true },
-          { name: "searchPeriodYears", label: "Search Period (Years)", type: "number", halfWidth: true },
+          { name: "searchPeriodYears", label: "Search Period (Years)", type: "number", placeholder: "30", halfWidth: true },
           { name: "encumbranceStatus", label: "Encumbrance Status", type: "select", halfWidth: true, options: [
             { value: "Clear", label: "Clear" },
-            { value: "Encumbered", label: "Encumbered" },
             { value: "Under Verification", label: "Under Verification" },
+            { value: "Encumbered", label: "Encumbered" },
+            { value: "Mortgage Registered", label: "Mortgage Registered" },
+            { value: "Disputed", label: "Disputed" },
           ] },
           { name: "riskRating", label: "Risk Rating", type: "select", halfWidth: true, options: [
             { value: "LOW", label: "Low" },

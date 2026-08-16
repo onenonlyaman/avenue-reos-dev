@@ -1,17 +1,27 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Wrench, ShieldAlert, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Wrench, ShieldAlert, CheckCircle2, AlertCircle, Loader2, Search, Code, RefreshCw } from "lucide-react";
 import { mcpApi, McpRegisteredTool } from "@/services/mcpApi";
 
 export function RegisteredToolsView() {
   const [tools, setTools] = useState<McpRegisteredTool[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedTool, setSelectedTool] = useState<McpRegisteredTool | null>(null);
 
   const loadData = async () => {
     try {
@@ -30,11 +40,22 @@ export function RegisteredToolsView() {
     loadData();
   }, []);
 
+  const filteredTools = useMemo(() => {
+    if (!searchQuery.trim()) return tools;
+    const q = searchQuery.toLowerCase();
+    return tools.filter(
+      (t) =>
+        t.toolName.toLowerCase().includes(q) ||
+        t.targetModule.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q)
+    );
+  }, [tools, searchQuery]);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center text-xs text-muted-foreground space-y-2 bg-card rounded-lg border border-border">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span>Loading registered MCP tools directory...</span>
+        <span>Loading registered MCP tools directory from database...</span>
       </div>
     );
   }
@@ -56,17 +77,46 @@ export function RegisteredToolsView() {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border border-border shadow-xs">
         <div>
           <h3 className="text-sm font-bold font-heading text-foreground">
-            Registered Agent Tools
+            Registered Enterprise Agent Tools
           </h3>
+          <p className="text-xs text-muted-foreground">
+            Standardized JSON-RPC tools exposed to internal and external AI agents
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Search tool or module..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs font-medium gap-1.5 shrink-0"
+            onClick={loadData}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Sync</span>
+          </Button>
         </div>
       </div>
 
-      {tools.length === 0 ? (
+      {filteredTools.length === 0 ? (
         <CorporateEmptyState
-          title="No Registered MCP Tools"
-          description="No agent tools registered yet."
-          actionLabel="Refresh Tools"
-          onAction={loadData}
+          title={searchQuery ? "No Matching Tools Found" : "No Registered MCP Tools"}
+          description={
+            searchQuery
+              ? `No registered agent tools match '${searchQuery}'.`
+              : "No agent tools registered in the database."
+          }
+          actionLabel={searchQuery ? "Clear Search" : "Refresh Tools"}
+          onAction={() => (searchQuery ? setSearchQuery("") : loadData())}
           icon={Wrench}
         />
       ) : (
@@ -77,33 +127,38 @@ export function RegisteredToolsView() {
                 <TableHead className="text-xs font-semibold">Tool Identifier</TableHead>
                 <TableHead className="text-xs font-semibold">Target Module</TableHead>
                 <TableHead className="text-xs font-semibold">Description</TableHead>
-                <TableHead className="text-xs font-semibold">Execution Capability</TableHead>
+                <TableHead className="text-xs font-semibold">Execution Boundary</TableHead>
                 <TableHead className="text-xs font-semibold text-center">Invocations</TableHead>
                 <TableHead className="text-xs font-semibold text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tools.map((t) => (
+              {filteredTools.map((t) => (
                 <TableRow key={t.id} className="hover:bg-muted/30 transition-colors">
                   <TableCell className="text-xs py-3 font-mono font-bold text-foreground">
-                    {t.toolName}
+                    <div className="flex items-center gap-1.5">
+                      <Code className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>{t.toolName}</span>
+                    </div>
                   </TableCell>
                   <TableCell className="text-xs py-3 font-medium text-foreground">
-                    {t.targetModule}
+                    <Badge variant="outline" className="text-[10px] font-mono">
+                      {t.targetModule}
+                    </Badge>
                   </TableCell>
-                  <TableCell className="text-xs py-3 text-muted-foreground">
+                  <TableCell className="text-xs py-3 text-muted-foreground max-w-xs truncate">
                     {t.description}
                   </TableCell>
                   <TableCell className="text-xs py-3">
                     {t.requiresHitl ? (
-                      <Badge variant="outline" className="text-[10px] font-bold bg-amber-100 text-amber-900 border-amber-300 gap-1">
-                        <ShieldAlert className="h-3 w-3 text-amber-700" />
-                        HITL Restricted
+                      <Badge variant="outline" className="text-[10px] font-bold text-amber-700 bg-amber-500/10 border-amber-500/30 gap-1">
+                        <ShieldAlert className="h-3 w-3 text-amber-600" />
+                        HITL Escrow Guarded
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border-emerald-300 gap-1">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-700" />
-                        Autonomous
+                      <Badge variant="outline" className="text-[10px] font-bold text-emerald-700 bg-emerald-500/10 border-emerald-500/30 gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                        Autonomous Execution
                       </Badge>
                     )}
                   </TableCell>
@@ -111,7 +166,13 @@ export function RegisteredToolsView() {
                     {t.executionCount}
                   </TableCell>
                   <TableCell className="text-xs py-3 text-right">
-                    <Button variant="outline" size="sm" className="h-7 text-[11px]">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px] gap-1 hover:bg-primary/10"
+                      onClick={() => setSelectedTool(t)}
+                    >
+                      <Code className="h-3 w-3" />
                       View Specification
                     </Button>
                   </TableCell>
@@ -121,6 +182,57 @@ export function RegisteredToolsView() {
           </Table>
         </div>
       )}
+
+      {/* JSON Schema Specification Modal Dialog */}
+      <Dialog open={Boolean(selectedTool)} onOpenChange={(open) => !open && setSelectedTool(null)}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Code className="h-4 w-4 text-primary" />
+              Tool Schema: {selectedTool?.toolName}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {selectedTool?.description}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedTool && (
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div className="p-2.5 rounded bg-muted/50 border border-border space-y-0.5">
+                  <span className="text-muted-foreground text-[10px] uppercase block">Target Module</span>
+                  <span className="font-bold text-foreground">{selectedTool.targetModule}</span>
+                </div>
+                <div className="p-2.5 rounded bg-muted/50 border border-border space-y-0.5">
+                  <span className="text-muted-foreground text-[10px] uppercase block">Execution Policy</span>
+                  <span className="font-bold text-foreground">
+                    {selectedTool.requiresHitl ? "Escrow Required (HITL)" : "Autonomous"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-foreground">JSON-RPC Input Schema Specification:</span>
+                <pre className="p-3 bg-muted rounded-lg border border-border text-[11px] font-mono overflow-x-auto text-foreground">
+                  {(() => {
+                    try {
+                      return JSON.stringify(JSON.parse(selectedTool.schemaInput), null, 2);
+                    } catch {
+                      return selectedTool.schemaInput;
+                    }
+                  })()}
+                </pre>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button size="sm" variant="outline" onClick={() => setSelectedTool(null)}>
+                  Close Specification
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

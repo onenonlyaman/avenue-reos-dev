@@ -11,12 +11,23 @@ export interface UserSessionDevice {
 
 export interface UserApprovalItem {
   id: string;
+  userId?: string;
   targetUserName: string;
   requestedRole: string;
   requestedFinancialLimit: number;
   justification: string;
   status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
   requiresHitl: boolean;
+}
+
+export interface InviteUserPayload {
+  fullName: string;
+  email: string;
+  initialPassword?: string;
+  role: string;
+  department?: string;
+  designation?: string;
+  siteLocation?: string;
 }
 
 const API_BASE = "/api/v1/users";
@@ -49,22 +60,34 @@ export const usersApi = {
     return fetchEnvelope<UserProfile[]>(`${API_BASE}`);
   },
 
-  async inviteUser(payload: Partial<UserProfile>): Promise<UserProfile> {
+  async inviteUser(payload: InviteUserPayload): Promise<UserProfile> {
     return fetchEnvelope<UserProfile>(`${API_BASE}`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
   },
 
-  async updateRole(userName: string, targetRole: string, financialLimit?: number): Promise<{ success: boolean; requiresHitl: boolean }> {
+  async updateRole(
+    identifier: { userId?: string; userName: string } | string,
+    targetRole: string,
+    financialLimit?: number
+  ): Promise<{ success: boolean; requiresHitl: boolean }> {
+    const userId = typeof identifier === "object" ? identifier.userId : undefined;
+    const userName = typeof identifier === "object" ? identifier.userName : identifier;
     return fetchEnvelope<{ success: boolean; requiresHitl: boolean }>(`${API_BASE}/roles`, {
       method: "POST",
-      body: JSON.stringify({ userName, targetRole, financialLimit }),
+      body: JSON.stringify({ userId, userName, targetRole, financialLimit }),
     });
   },
 
   async getActiveSessions(): Promise<UserSessionDevice[]> {
     return fetchEnvelope<UserSessionDevice[]>(`${API_BASE}/sessions`);
+  },
+
+  async revokeSession(sessionId: string): Promise<{ success: boolean }> {
+    return fetchEnvelope<{ success: boolean }>(`${API_BASE}/sessions?sessionId=${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+    });
   },
 
   async revokeAllSessions(): Promise<{ success: boolean }> {

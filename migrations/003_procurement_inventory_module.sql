@@ -36,7 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_rfq_pr ON request_for_quotations (pr_id);
 CREATE INDEX IF NOT EXISTS idx_rfq_tenant_status ON request_for_quotations (tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_rfq_vendors_gin ON request_for_quotations USING GIN (vendors_invited);
 
-CREATE TABLE IF NOT EXISTS purchase_orders (
+CREATE TABLE IF NOT EXISTS legacy_purchase_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL,
     po_number VARCHAR(100) NOT NULL,
@@ -51,14 +51,14 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     items_json JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_po_number UNIQUE (tenant_id, po_number)
+    CONSTRAINT uq_legacy_po_number UNIQUE (tenant_id, po_number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_po_vendor ON purchase_orders (vendor_id);
-CREATE INDEX IF NOT EXISTS idx_po_project ON purchase_orders (project_id);
-CREATE INDEX IF NOT EXISTS idx_po_cost_center ON purchase_orders (cost_center_id);
-CREATE INDEX IF NOT EXISTS idx_po_tenant_status ON purchase_orders (tenant_id, status);
-CREATE INDEX IF NOT EXISTS idx_po_items_gin ON purchase_orders USING GIN (items_json);
+CREATE INDEX IF NOT EXISTS idx_legacy_po_vendor ON legacy_purchase_orders (vendor_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_po_project ON legacy_purchase_orders (project_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_po_cost_center ON legacy_purchase_orders (cost_center_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_po_tenant_status ON legacy_purchase_orders (tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_legacy_po_items_gin ON legacy_purchase_orders USING GIN (items_json);
 
 CREATE TABLE IF NOT EXISTS material_receipt_notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

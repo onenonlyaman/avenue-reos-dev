@@ -124,6 +124,13 @@ export const communicationsApi = {
     });
   },
 
+  async togglePinMessage(messageId: string, isPinned: boolean): Promise<ChatMessage> {
+    return fetchEnvelope<ChatMessage>(`${API_BASE}/messages`, {
+      method: "PATCH",
+      body: JSON.stringify({ messageId, isPinned }),
+    });
+  },
+
   async getTickets(): Promise<SupportTicket[]> {
     return fetchEnvelope<SupportTicket[]>(`${API_BASE}/tickets`);
   },
@@ -135,8 +142,27 @@ export const communicationsApi = {
     });
   },
 
+  async updateTicketStatus(id: string, status: "OPEN" | "IN_PROGRESS" | "RESOLVED"): Promise<SupportTicket> {
+    return fetchEnvelope<SupportTicket>(`${API_BASE}/tickets`, {
+      method: "PATCH",
+      body: JSON.stringify({ id, status }),
+    });
+  },
+
   async getCustomerTimeline(): Promise<CustomerTimelineEntry[]> {
     return fetchEnvelope<CustomerTimelineEntry[]>(`${API_BASE}/customer-timeline`);
+  },
+
+  async createTimelineEntry(payload: {
+    customerName: string;
+    unitNumber: string;
+    interactionType: string;
+    summary: string;
+  }): Promise<CustomerTimelineEntry> {
+    return fetchEnvelope<CustomerTimelineEntry>(`${API_BASE}/customer-timeline`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   async getPendingApprovals(): Promise<CommunicationsApprovalItem[]> {

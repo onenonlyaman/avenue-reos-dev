@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Calculator, CheckCircle2, Plus, Trash2, Loader2 } from "lucide-react";
+import { AlertTriangle, Calculator, CheckCircle2, Plus, Trash2, Loader2, User } from "lucide-react";
 import { UnitDetail } from "./UnitSpecSheet";
 import { LeadRecord } from "./LeadManagementView";
 
@@ -61,17 +61,31 @@ export function QuotationBookingModal({
   const [salesRepNotes, setSalesRepNotes] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [prospectName, setProspectName] = useState<string>("");
+  const [prospectPhone, setProspectPhone] = useState<string>("");
 
   const [lineItems, setLineItems] = useState<QuotationLineItem[]>([]);
   const [newItemName, setNewItemName] = useState<string>("");
   const [newItemAmount, setNewItemAmount] = useState<string>("");
 
   useEffect(() => {
+    if (selectedLead) {
+      setProspectName(selectedLead.name);
+      setProspectPhone(selectedLead.phone);
+    } else {
+      setProspectName("");
+      setProspectPhone("");
+    }
+  }, [selectedLead, isOpen]);
+
+  useEffect(() => {
     if (selectedUnit) {
       const baseCost = selectedUnit.carpetAreaSqFt * selectedUnit.baseRatePerSqFt;
       const floorRise = selectedUnit.floorRisePremium || 0;
 
-      setLineItems([
+      const items: QuotationLineItem[] = [
         {
           id: "base_cost",
           name: `Base Area Cost (${selectedUnit.carpetAreaSqFt} sq.ft. × ₹${selectedUnit.baseRatePerSqFt}/sq.ft.)`,
@@ -79,28 +93,19 @@ export function QuotationBookingModal({
           category: "BASE",
           isRemovable: false,
         },
-        {
+      ];
+
+      if (floorRise > 0) {
+        items.push({
           id: "floor_rise",
           name: `Floor Rise Premium (Floor ${selectedUnit.floorNumber})`,
           amount: floorRise,
           category: "BASE",
           isRemovable: true,
-        },
-        {
-          id: "clubhouse",
-          name: "Club House Membership Charge",
-          amount: 250000,
-          category: "CHARGE",
-          isRemovable: true,
-        },
-        {
-          id: "infrastructure",
-          name: "Infrastructure & Utility Assessment",
-          amount: 300000,
-          category: "CHARGE",
-          isRemovable: true,
-        },
-      ]);
+        });
+      }
+
+      setLineItems(items);
     }
   }, [selectedUnit]);
 
@@ -170,6 +175,14 @@ export function QuotationBookingModal({
   if (!selectedUnit) return null;
 
   const handleSubmitBooking = async () => {
+    const finalCustomerName = selectedLead ? selectedLead.name : prospectName.trim();
+    const finalCustomerPhone = selectedLead ? selectedLead.phone : prospectPhone.trim();
+
+    if (!finalCustomerName || !finalCustomerPhone) {
+      setErrorMessage("Please specify the prospect's full name and contact number.");
+      return;
+    }
+
     const jsonBreakdown = {
       line_items: lineItems.map((item) => ({
         id: item.id,
@@ -185,22 +198,25 @@ export function QuotationBookingModal({
       final_package_price: calculations.totalPackagePrice,
     };
 
+    const bookingDeposit = Math.round(calculations.totalPackagePrice * 0.05);
+
     const submission: BookingSubmissionData = {
       unitId: selectedUnit.id,
       unitNumber: selectedUnit.unitNumber,
       projectName: selectedUnit.projectName,
-      customerName: selectedLead ? selectedLead.name : "Walk-in Prospect",
-      customerPhone: selectedLead ? selectedLead.phone : "+91 98000 00000",
+      customerName: finalCustomerName,
+      customerPhone: finalCustomerPhone,
       discountPercentage: discountPercent,
       discountAmount: calculations.discountAmount,
       totalPackagePrice: calculations.totalPackagePrice,
       requiresHitl: calculations.requiresHitl,
-      salesRepNotes: salesRepNotes || "Standard commercial terms applied.",
+      salesRepNotes: salesRepNotes.trim() || "Standard sales quotation terms applied.",
       quotation_breakdown_json: jsonBreakdown,
     };
 
     try {
       setIsSubmitting(true);
+      setErrorMessage(null);
       const res = await fetch("/api/v1/sales/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -210,7 +226,7 @@ export function QuotationBookingModal({
           customerName: submission.customerName,
           customerPhone: submission.customerPhone,
           agreedTotalPrice: submission.totalPackagePrice,
-          bookingDepositAmount: 200000,
+          bookingDepositAmount: bookingDeposit,
           discountPercentage: discountPercent,
           quotation_breakdown_json: jsonBreakdown,
           requiresHitl: calculations.requiresHitl,
@@ -222,8 +238,11 @@ export function QuotationBookingModal({
       if (envelope.success) {
         onBookingSubmitted(submission);
         setIsSubmitted(true);
+      } else {
+        setErrorMessage(envelope.error?.message || "Failed to submit booking proposal.");
       }
     } catch {
+      setErrorMessage("Network error while submitting booking.");
     } finally {
       setIsSubmitting(false);
     }
@@ -231,6 +250,7 @@ export function QuotationBookingModal({
 
   const handleCloseModal = () => {
     setIsSubmitted(false);
+    setErrorMessage(null);
     onClose();
   };
 
@@ -240,7 +260,7 @@ export function QuotationBookingModal({
         <DialogHeader className="border-b border-border pb-3 shrink-0">
           <div className="flex items-center justify-between">
             <Badge variant="outline" className="text-[10px] font-mono">
-              DYNAMIC VALUATION & BOOKING ENGINE
+              VALUATION & BOOKING ENGINE
             </Badge>
             <span className="text-xs text-muted-foreground font-mono">
               {selectedUnit.projectName}
@@ -250,9 +270,18 @@ export function QuotationBookingModal({
             Commercial Quotation — Unit {selectedUnit.unitNumber} ({selectedUnit.towerName})
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Prospect: {selectedLead ? selectedLead.name : "Unassigned Walk-In Prospect"}
+            Configure line items, authorized discount, and reserve unit.
           </DialogDescription>
         </DialogHeader>
+
+        {errorMessage && (
+          <div className="p-2.5 bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded flex items-center justify-between mt-2">
+            <span>{errorMessage}</span>
+            <button type="button" className="font-bold text-xs" onClick={() => setErrorMessage(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {isSubmitted ? (
           <div className="py-8 text-center space-y-4">
@@ -266,7 +295,7 @@ export function QuotationBookingModal({
               <p className="text-xs text-muted-foreground max-w-md mx-auto">
                 {calculations.requiresHitl
                   ? "Your booking request includes a discount >5% and has been routed to the Sales Director approval queue."
-                  : "Unit reserved and quotation recorded."}
+                  : "Unit reserved and quotation recorded in the register."}
               </p>
             </div>
 
@@ -276,6 +305,29 @@ export function QuotationBookingModal({
           </div>
         ) : (
           <div className="space-y-4 py-2 text-xs flex-1 overflow-y-auto min-h-0">
+            {!selectedLead && (
+              <div className="grid grid-cols-2 gap-3 bg-muted/30 p-3 rounded-lg border border-border">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Prospect Full Name *</Label>
+                  <Input
+                    placeholder="Customer Name"
+                    value={prospectName}
+                    onChange={(e) => setProspectName(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Contact Number *</Label>
+                  <Input
+                    placeholder="+91 98000 00000"
+                    value={prospectPhone}
+                    onChange={(e) => setProspectPhone(e.target.value)}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3 bg-muted/40 p-3 rounded-lg border border-border">
               <div>
                 <div className="text-[10px] text-muted-foreground">Unit Typology</div>
@@ -289,7 +341,7 @@ export function QuotationBookingModal({
 
             <div className="space-y-2 border border-border rounded-lg p-3">
               <div className="text-xs font-semibold text-foreground flex items-center justify-between border-b border-border pb-2">
-                <span>Configurable Line Item Schedule</span>
+                <span>Itemized Commercial Schedule</span>
                 <Calculator className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
 
@@ -326,7 +378,7 @@ export function QuotationBookingModal({
 
               <div className="pt-2 border-t border-border flex items-center gap-2">
                 <Input
-                  placeholder="New Line Item Title (e.g. Car Parking Premium)"
+                  placeholder="New Charge / Head (e.g. Club House, Infrastructure)"
                   value={newItemName}
                   onChange={(e) => setNewItemName(e.target.value)}
                   className="h-8 text-xs flex-1"
@@ -354,7 +406,7 @@ export function QuotationBookingModal({
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium">Commercial Discount (%)</Label>
                 <span className="text-[10px] font-mono text-muted-foreground">
-                  Authorized Quota: 5.0%
+                  Standard Quota: 5.0%
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -378,10 +430,20 @@ export function QuotationBookingModal({
                 <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
                 <div className="text-xs leading-relaxed">
                   <span className="font-semibold block mb-0.5 font-heading">Approval Warning Triggered</span>
-                  Warning: Requested discount exceeds standard 5% sales quota. Submitting this booking will initiate a mandatory Human-In-The-Loop approval request to the Sales Director.
+                  Warning: Requested discount exceeds standard 5% sales quota. Submitting this booking will initiate a mandatory approval request to the Sales Director.
                 </div>
               </div>
             )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Sales Rep Notes / Commercial Justification</Label>
+              <Input
+                placeholder="Enter justification or payment term notes..."
+                value={salesRepNotes}
+                onChange={(e) => setSalesRepNotes(e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
 
             <div className="bg-muted/30 border border-border p-3 rounded-lg space-y-2">
               <div className="flex justify-between text-muted-foreground">
@@ -416,7 +478,7 @@ export function QuotationBookingModal({
               onClick={handleSubmitBooking}
             >
               {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-              {calculations.requiresHitl ? "Submit for Executive Approval" : "Confirm Booking & Dispatch Quote"}
+              {calculations.requiresHitl ? "Submit for Executive Approval" : "Confirm Booking & Reserve Unit"}
             </Button>
           </DialogFooter>
         )}

@@ -1,368 +1,531 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CorporateStatCard } from "@/components/core/CorporateStatCard";
-import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
+import { tallyErpApi, GstSummaryResponse, TdsMsmeResponse } from "@/services/tallyErpApi";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { FileCheck, ShieldCheck, Landmark, AlertTriangle, FileSpreadsheet, Send, History } from "lucide-react";
-import { tallyErpApi, GstSummaryResponse, TdsMsmeResponse } from "@/services/tallyErpApi";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
+import { RecordFormModal, RecordField } from "@/components/core/RecordFormModal";
+import { toast } from "@/components/ui/sonner";
+import { FileCheck, ShieldCheck, QrCode, CheckCircle2, XCircle, Clock, AlertTriangle, Plus } from "lucide-react";
+
+const MSME_FIELDS: RecordField[] = [
+  {
+    name: "vendorName",
+    label: "MSME Vendor / Supplier Name",
+    type: "text",
+    required: true,
+    placeholder: "e.g. Apex Hardware & Electricals (Micro)",
+  },
+  {
+    name: "msmeCategory",
+    label: "Enterprise Classification",
+    type: "select",
+    required: true,
+    options: [
+      { value: "Micro Enterprise", label: "Micro Enterprise (45-Day statutory rule)" },
+      { value: "Small Enterprise", label: "Small Enterprise (45-Day statutory rule)" },
+      { value: "Medium Enterprise", label: "Medium Enterprise" },
+    ],
+    halfWidth: true,
+  },
+  {
+    name: "invoiceNumber",
+    label: "Invoice Reference Number",
+    type: "text",
+    required: true,
+    placeholder: "e.g. APX-2026-881",
+    halfWidth: true,
+  },
+  {
+    name: "amount",
+    label: "Invoice Taxable Amount (₹)",
+    type: "number",
+    required: true,
+    placeholder: "e.g. 240000",
+    halfWidth: true,
+  },
+  {
+    name: "dueDate",
+    label: "Statutory 45-Day Due Date",
+    type: "date",
+    halfWidth: true,
+  },
+  {
+    name: "reasonForChange",
+    label: "Statutory Bill Narration / Justification",
+    type: "text",
+    placeholder: "e.g. MSME Section 43B(h) raw material settlement booking",
+  },
+];
 
 export function StatutoryComplianceView() {
   const [gstData, setGstData] = useState<GstSummaryResponse | null>(null);
-  const [tdsMsmeData, setTdsMsmeData] = useState<TdsMsmeResponse | null>(null);
+  const [tdsData, setTdsData] = useState<TdsMsmeResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isGeneratingIrn, setIsGeneratingIrn] = useState<boolean>(false);
-  const [irnResult, setIrnResult] = useState<{ irn: string; eWayBillNumber: string } | null>(null);
+  const [isGeneratingEInvoice, setIsGeneratingEInvoice] = useState<boolean>(false);
+  const [isMsmeModalOpen, setIsMsmeModalOpen] = useState<boolean>(false);
+  const [invoiceDocNo, setInvoiceDocNo] = useState<string>("");
+  const [invoiceAmount, setInvoiceAmount] = useState<string>("");
 
-  const loadData = async () => {
+  const loadStatutoryData = async () => {
     setIsLoading(true);
     try {
-      const [gRes, tmRes] = await Promise.all([
+      const [gRes, tRes] = await Promise.all([
         tallyErpApi.fetchGstSummary(),
         tallyErpApi.fetchTdsMsmeSummary(),
       ]);
       setGstData(gRes);
-      setTdsMsmeData(tmRes);
-    } catch {
-      setGstData(null);
-      setTdsMsmeData(null);
+      setTdsData(tRes);
+    } catch (err: any) {
+      toast({ title: "Failed to load Statutory Compliance", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadStatutoryData();
   }, []);
 
-  const handleGenerateIrn = async () => {
-    setIsGeneratingIrn(true);
+  const handleUpdateIms = async (reconciliationId: string, action: "ACCEPT" | "REJECT" | "PENDING") => {
     try {
-      const res = await tallyErpApi.generateEInvoice({ invoiceNumber: "INV-2026-NASHIK-001" });
-      setIrnResult(res);
-      await loadData();
-    } catch {
-    } finally {
-      setIsGeneratingIrn(false);
+      await tallyErpApi.updateImsAction(reconciliationId, action);
+      toast({ title: "IMS Action Recorded", description: `Invoice state updated to ${action}.` });
+      loadStatutoryData();
+    } catch (err: any) {
+      toast({ title: "Action Failed", description: err.message, variant: "destructive" });
     }
   };
 
+  const handleGenerateEInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invoiceDocNo.trim()) return;
+
+    try {
+      const res = await tallyErpApi.generateEInvoice({
+        docNumber: invoiceDocNo,
+        totalAmount: parseFloat(invoiceAmount) || 100000,
+      });
+      toast({ title: "e-Invoice Generated", description: `IRN: ${res.irn.substring(0, 16)}...` });
+      setIsGeneratingEInvoice(false);
+      setInvoiceDocNo("");
+      loadStatutoryData();
+    } catch (err: any) {
+      toast({ title: "e-Invoice Generation Failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground animate-pulse">
+        Loading GST Returns, e-Invoicing Registry & TDS Status...
+      </div>
+    );
+  }
+
+  const gstr1 = gstData?.gstr1;
+  const gstr3b = gstData?.gstr3b;
+  const reconciliations = gstData?.gstr2bReconciliations || [];
+  const eInvoices = gstData?.eInvoices || [];
+  const tdsSummary = tdsData?.tdsSummary || [];
+
   return (
     <div className="space-y-6">
+      {/* Top Tax Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <CorporateStatCard
-          label="GSTR-1 Taxable Turnover"
-          value={`₹${(gstData?.gstr1SalesTotal || 0).toLocaleString("en-IN")}`}
-          subtext="OUTWARD SUPPLIES REGISTER"
-          icon={FileCheck}
-          trend="Automated"
-          trendDirection="neutral"
-        />
-        <CorporateStatCard
-          label="GSTR-3B Tax Liability"
-          value={`₹${(gstData?.gstr3bTaxLiability || 0).toLocaleString("en-IN")}`}
-          subtext="ESTIMATED NET TAX PAYABLE"
-          icon={Landmark}
-          trend="GSTR-3B Ready"
-          trendDirection="neutral"
-        />
-        <CorporateStatCard
-          label="GSTR-2A/2B ITC Mismatches"
-          value={String(gstData?.itcMismatchCount || 0)}
-          subtext="Input Tax Credit Variance"
-          icon={AlertTriangle}
-          trend={gstData?.itcMismatchCount ? "Mismatch Flagged" : "Reconciled"}
-          trendDirection={gstData?.itcMismatchCount ? "down" : "up"}
-        />
-        <CorporateStatCard
-          label="MCA Append-Only Audit Entries"
-          value={String(tdsMsmeData?.mcaLogs.length || 0)}
-          subtext="Statutory Audit Trail"
-          icon={History}
-          trend="Immutable Log"
-          trendDirection="neutral"
-        />
+        <Card className="border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">
+              Outward Supplies (GSTR-1)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-mono font-bold text-foreground">
+              ₹{(gstr1?.totalOutwardSupplies || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Taxable Sales Turnover</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">
+              Eligible ITC (GSTR-2B)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-mono font-bold text-emerald-600">
+              ₹{(gstr3b?.table4_itc?.eligibleItcTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Auto-reconciled supplier credit</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">
+              Net Tax Payable (GSTR-3B)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-mono font-bold text-primary">
+              ₹{(gstr3b?.taxOffset?.liabilities?.totalCashPayable || 0).toLocaleString("en-IN", {
+                minimumFractionDigits: 2,
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Net Cash Liability after Offset</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">
+              Authenticated e-Invoices
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-mono font-bold text-indigo-600">{eInvoices.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">IRN registered with IRP</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <Tabs defaultValue="gst" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-xl h-9">
-          <TabsTrigger value="gst" className="text-xs font-semibold">
-            GST & E-Invoicing
-          </TabsTrigger>
-          <TabsTrigger value="tds-msme" className="text-xs font-semibold">
-            TDS & Section 43B(h) MSME
-          </TabsTrigger>
-          <TabsTrigger value="mca" className="text-xs font-semibold">
-            MCA Audit Trail Logs
-          </TabsTrigger>
-        </TabsList>
+      {/* GSTR-3B Tax Offset Priority Algebra */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-primary" />
+            <span>GSTR-3B Statutory Tax Offset Priorities (Section 49A/49B)</span>
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Priority Sequence: IGST Input Tax Credit is offset first against IGST, then CGST and SGST liabilities.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-3 rounded-lg border border-border bg-background">
+              <span className="text-xs font-semibold text-muted-foreground">Central GST (CGST)</span>
+              <div className="flex justify-between items-center mt-2 text-xs">
+                <span>Gross Liability:</span>
+                <span className="font-mono font-bold">₹{(gstr3b?.table31?.cgst || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-emerald-600">
+                <span>ITC Offset:</span>
+                <span className="font-mono font-bold">-₹{(gstr3b?.table4_itc?.itcCgst || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 mt-2 border-t border-border font-bold text-xs">
+                <span>Net Payable:</span>
+                <span className="font-mono text-primary">
+                  ₹{(gstr3b?.taxOffset?.liabilities?.cgst || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
 
-        <TabsContent value="gst" className="pt-4 space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card className="lg:col-span-1 border-border shadow-xs">
-              <CardHeader className="pb-3 border-b border-border">
-                <CardTitle className="text-base font-semibold font-heading">
-                  E-Invoice IRN & E-Way Dispatch
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  NIC portal connected auto-generation engine
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-4">
-                <div className="p-3 bg-muted/40 border border-border rounded-md space-y-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Portal Status:</span>
-                    <span className="font-semibold text-emerald-700">GSTN NIC API Connected</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Active GSTIN:</span>
-                    <span className="font-mono">27AAACA1234F1Z5</span>
-                  </div>
-                </div>
+            <div className="p-3 rounded-lg border border-border bg-background">
+              <span className="text-xs font-semibold text-muted-foreground">State GST (SGST)</span>
+              <div className="flex justify-between items-center mt-2 text-xs">
+                <span>Gross Liability:</span>
+                <span className="font-mono font-bold">₹{(gstr3b?.table31?.sgst || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-emerald-600">
+                <span>ITC Offset:</span>
+                <span className="font-mono font-bold">-₹{(gstr3b?.table4_itc?.itcSgst || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 mt-2 border-t border-border font-bold text-xs">
+                <span>Net Payable:</span>
+                <span className="font-mono text-primary">
+                  ₹{(gstr3b?.taxOffset?.liabilities?.sgst || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
 
-                {irnResult && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-md text-xs space-y-1 font-mono">
-                    <div className="text-emerald-900 font-bold">E-Invoice Generated Successfully</div>
-                    <div className="text-[11px] text-emerald-800 break-all">IRN: {irnResult.irn}</div>
-                    <div className="text-[11px] text-emerald-800">E-Way Bill #: {irnResult.eWayBillNumber}</div>
-                  </div>
-                )}
-
-                <Button
-                  onClick={handleGenerateIrn}
-                  disabled={isGeneratingIrn}
-                  className="w-full h-8 text-xs font-semibold gap-2"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {isGeneratingIrn ? "Dispatching IRN..." : "Generate E-Invoice & E-Way Bill"}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="lg:col-span-2 border-border shadow-xs">
-              <CardHeader className="pb-3 border-b border-border">
-                <CardTitle className="text-base font-semibold font-heading">
-                  GSTR-2A / 2B ITC Reconciliation Mismatches
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Books of accounts vs GST portal purchase register discrepancies
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-4">
-                {isLoading ? (
-                  <div className="p-8 text-center text-xs text-muted-foreground">Loading GST reconciliation...</div>
-                ) : !gstData?.mismatches || gstData.mismatches.length === 0 ? (
-                  <CorporateEmptyState
-                    title="Zero GSTR-2A/2B Mismatches"
-                    description="All purchase register invoices match the GST portal records."
-                    icon={ShieldCheck}
-                  />
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-border">
-                        <TableHead className="text-xs font-semibold">Vendor Name</TableHead>
-                        <TableHead className="text-xs font-semibold">Invoice Ref</TableHead>
-                        <TableHead className="text-xs font-semibold text-right">Portal ITC</TableHead>
-                        <TableHead className="text-xs font-semibold text-right">Books ITC</TableHead>
-                        <TableHead className="text-xs font-semibold text-right">Variance</TableHead>
-                        <TableHead className="text-xs font-semibold text-center">Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {gstData.mismatches.map((m) => (
-                        <TableRow key={m.id} className="border-border">
-                          <TableCell className="text-xs font-medium">{m.vendorName}</TableCell>
-                          <TableCell className="text-xs font-mono text-muted-foreground">{m.invoiceNumber}</TableCell>
-                          <TableCell className="text-xs font-mono text-right">₹{m.portalItcAmount.toLocaleString("en-IN")}</TableCell>
-                          <TableCell className="text-xs font-mono text-right">₹{m.booksItcAmount.toLocaleString("en-IN")}</TableCell>
-                          <TableCell className="text-xs font-mono font-bold text-destructive text-right">₹{m.varianceAmount.toLocaleString("en-IN")}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
-                              {m.status}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+            <div className="p-3 rounded-lg border border-border bg-background">
+              <span className="text-xs font-semibold text-muted-foreground">Integrated GST (IGST)</span>
+              <div className="flex justify-between items-center mt-2 text-xs">
+                <span>Gross Liability:</span>
+                <span className="font-mono font-bold">₹{(gstr3b?.table31?.igst || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-emerald-600">
+                <span>ITC Offset:</span>
+                <span className="font-mono font-bold">-₹{(gstr3b?.table4_itc?.itcIgst || 0).toLocaleString("en-IN")}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 mt-2 border-t border-border font-bold text-xs">
+                <span>Net Payable:</span>
+                <span className="font-mono text-primary">
+                  ₹{(gstr3b?.taxOffset?.liabilities?.igst || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
           </div>
-        </TabsContent>
+        </CardContent>
+      </Card>
 
-        <TabsContent value="tds-msme" className="pt-4 space-y-6">
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-semibold font-heading">
-                    TDS / TCS Statutory Deduction Threshold Engine
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Sections 194C, 194J, 194I, and 194Q compliance status
-                  </CardDescription>
-                </div>
-                <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
-                  <FileSpreadsheet className="h-3.5 w-3.5" />
-                  Export Form 26Q
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {(tdsMsmeData?.tdsSummary || []).map((t) => (
-                  <div key={t.sectionCode} className="p-3 bg-card border border-border rounded-lg space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline" className="text-[10px] font-bold">
-                        Section {t.sectionCode}
+      {/* GSTR-2B & Invoice Management System (IMS) Actions */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base font-semibold">GSTR-2B Inward Supply & IMS Actions</CardTitle>
+            <CardDescription>
+              Action Resolution: Accept to claim ITC in GSTR-3B, Reject to return to vendor, or Hold in pending queue.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {reconciliations.length === 0 ? (
+            <div className="p-6">
+              <CorporateEmptyState
+                icon={FileCheck}
+                title="No Inward Invoices for Reconciliation"
+                description="GSTR-2B inward vendor invoices will be loaded for dynamic reconciliation and IMS actions."
+              />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Vendor GSTIN</TableHead>
+                  <TableHead>Invoice No</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Taxable Value</TableHead>
+                  <TableHead>CGST / SGST</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">IMS Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reconciliations.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-mono text-xs font-semibold">{r.vendorGstin}</TableCell>
+                    <TableCell className="text-xs font-medium">{r.invoiceNumber}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{r.invoiceDate}</TableCell>
+                    <TableCell className="font-mono text-xs">₹{(r.taxableValue || 0).toLocaleString("en-IN")}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      ₹{(r.cgstAmount || 0).toLocaleString("en-IN")} / ₹{(r.sgstAmount || 0).toLocaleString("en-IN")}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          r.imsAction === "ACCEPT"
+                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]"
+                            : r.imsAction === "REJECT"
+                            ? "bg-rose-500/10 text-rose-600 border-rose-500/20 text-[10px]"
+                            : "bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]"
+                        }
+                      >
+                        {r.imsAction}
                       </Badge>
-                      <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-300">
-                        {t.complianceStatus}
-                      </Badge>
-                    </div>
-                    <div className="text-xs font-semibold line-clamp-1">{t.sectionDescription}</div>
-                    <div className="text-[11px] text-muted-foreground space-y-0.5">
-                      <div>Threshold: ₹{t.thresholdLimit.toLocaleString("en-IN")}</div>
-                      <div>Deducted: ₹{t.tdsDeductedAmount.toLocaleString("en-IN")}</div>
-                    </div>
-                  </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleUpdateIms(r.id, "ACCEPT")}
+                          className="h-7 text-[10px] text-emerald-600 hover:bg-emerald-500/10 gap-1 px-2"
+                        >
+                          <CheckCircle2 className="h-3 w-3" /> Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleUpdateIms(r.id, "REJECT")}
+                          className="h-7 text-[10px] text-rose-600 hover:bg-rose-500/10 gap-1 px-2"
+                        >
+                          <XCircle className="h-3 w-3" /> Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleUpdateIms(r.id, "PENDING")}
+                          className="h-7 text-[10px] text-amber-600 hover:bg-amber-500/10 gap-1 px-2"
+                        >
+                          <Clock className="h-3 w-3" /> Hold
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </div>
-            </CardContent>
-          </Card>
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <CardTitle className="text-base font-semibold font-heading">
-                Section 43B(h) MSME Payment Monitor (15d / 45d Rules)
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Micro & Small vendor payment window alerts and tax disallowance risk tracker
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {!tdsMsmeData?.msmeVendors || tdsMsmeData.msmeVendors.length === 0 ? (
-                <CorporateEmptyState
-                  title="Zero Overdue MSME Invoices"
-                  description="No Micro or Small enterprise vendor invoices are past the 15/45-day payment window."
-                  icon={ShieldCheck}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border">
-                      <TableHead className="text-xs font-semibold">Vendor Name</TableHead>
-                      <TableHead className="text-xs font-semibold">Category</TableHead>
-                      <TableHead className="text-xs font-semibold">Invoice Ref</TableHead>
-                      <TableHead className="text-xs font-semibold">Window</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Invoice Amount</TableHead>
-                      <TableHead className="text-xs font-semibold text-right">Overdue Amount</TableHead>
-                      <TableHead className="text-xs font-semibold text-center">Tax Risk Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tdsMsmeData.msmeVendors.map((v) => (
-                      <TableRow key={v.id} className="border-border">
-                        <TableCell className="text-xs font-medium">{v.vendorName}</TableCell>
-                        <TableCell className="text-xs">
-                          <Badge variant="outline" className="text-[10px]">
-                            {v.msmeCategory}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground">{v.invoiceNumber}</TableCell>
-                        <TableCell className="text-xs">{v.paymentWindowDays} Days</TableCell>
-                        <TableCell className="text-xs font-mono text-right">₹{v.amount.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-xs font-mono font-bold text-destructive text-right">₹{v.overdueAmount.toLocaleString("en-IN")}</TableCell>
-                        <TableCell className="text-center">
-                          {v.taxDisallowanceRisk ? (
-                            <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
-                              Disallowance Risk
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-300">
-                              Compliant
-                            </Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+      {/* Authenticated e-Invoices Register */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base font-semibold">e-Invoicing Registry & IRN Numbers</CardTitle>
+            <CardDescription>
+              Government Invoice Registration Portal (IRP) authenticated sales invoices with standard 64-char SHA-256 IRN.
+            </CardDescription>
+          </div>
+          <Button size="sm" onClick={() => setIsGeneratingEInvoice(true)} className="gap-1 text-xs">
+            <QrCode className="h-3.5 w-3.5" /> Generate e-Invoice IRN
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {eInvoices.length === 0 ? (
+            <div className="p-6">
+              <CorporateEmptyState
+                icon={QrCode}
+                title="No e-Invoices Generated Yet"
+                description="Click 'Generate e-Invoice IRN' to register sales invoices with the government portal."
+                actionLabel="Generate e-Invoice"
+                onAction={() => setIsGeneratingEInvoice(true)}
+              />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice Number</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Amount (₹)</TableHead>
+                  <TableHead>64-Character SHA-256 IRN</TableHead>
+                  <TableHead>Ack Number</TableHead>
+                  <TableHead>e-Way Bill</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {eInvoices.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="font-mono text-xs font-semibold">{e.voucherNumber}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{e.voucherDate}</TableCell>
+                    <TableCell className="font-mono text-xs font-bold">
+                      ₹{(e.totalAmount || 0).toLocaleString("en-IN")}
+                    </TableCell>
+                    <TableCell className="font-mono text-[10px] text-muted-foreground max-w-[200px] truncate" title={e.irn}>
+                      {e.irn}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{e.ackNumber}</TableCell>
+                    <TableCell className="font-mono text-xs">{e.ewayBillNumber || "—"}</TableCell>
+                    <TableCell>
+                      <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                        {e.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
-        <TabsContent value="mca" className="pt-4">
-          <Card className="border-border shadow-xs">
-            <CardHeader className="pb-3 border-b border-border">
-              <CardTitle className="text-base font-semibold font-heading">
-                Immutable MCA Append-Only Audit Trail Inspector
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Companies Act compliant voucher creation, alteration, and cancellation logs
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {!tdsMsmeData?.mcaLogs || tdsMsmeData.mcaLogs.length === 0 ? (
-                <CorporateEmptyState
-                  title="No Audit Logs Recorded"
-                  description="Audit trail logs will appear automatically upon voucher posting."
-                  icon={History}
-                />
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-border">
-                      <TableHead className="text-xs font-semibold">Timestamp</TableHead>
-                      <TableHead className="text-xs font-semibold">Voucher Ref</TableHead>
-                      <TableHead className="text-xs font-semibold">Operation</TableHead>
-                      <TableHead className="text-xs font-semibold">User Identity</TableHead>
-                      <TableHead className="text-xs font-semibold">IP Address</TableHead>
-                      <TableHead className="text-xs font-semibold">Changes Digest</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tdsMsmeData.mcaLogs.map((log) => (
-                      <TableRow key={log.id} className="border-border">
-                        <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                          {log.timestamp.replace("T", " ").slice(0, 19)}
-                        </TableCell>
-                        <TableCell className="text-xs font-semibold font-mono">{log.voucherReference}</TableCell>
-                        <TableCell className="text-xs">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] ${
-                              log.actionType === "CREATE"
-                                ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                                : log.actionType === "ALTER"
-                                ? "bg-amber-50 text-amber-800 border-amber-300"
-                                : "bg-destructive/10 text-destructive border-destructive/20"
-                            }`}
-                          >
-                            {log.actionType}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">{log.userId}</TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground">{log.ipAddress}</TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground truncate max-w-xs">
-                          {log.fieldChangesSummary}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* TDS Deductions & MSME Section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base font-semibold">TDS Deductions & Section Limits</CardTitle>
+            <CardDescription>Budget 2026 Section 194C, 194J, 194Q & Section 43B(h) MSME compliance</CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs font-semibold gap-1.5"
+            onClick={() => setIsMsmeModalOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Record MSME Bill
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Section</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Statutory Threshold</TableHead>
+                <TableHead>Utilized Payouts</TableHead>
+                <TableHead>TDS Deducted</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tdsSummary.map((t) => (
+                <TableRow key={t.sectionCode}>
+                  <TableCell className="font-mono text-xs font-bold text-primary">{t.sectionCode}</TableCell>
+                  <TableCell className="text-xs font-medium">{t.sectionDescription || (t as any).sectionTitle || t.sectionCode}</TableCell>
+                  <TableCell className="font-mono text-xs">₹{(t.thresholdLimit || 0).toLocaleString("en-IN")}</TableCell>
+                  <TableCell className="font-mono text-xs font-semibold">
+                    ₹{(t.utilizedAmount || (t as any).cumulativeTdsDeducted || 0).toLocaleString("en-IN")}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs font-bold text-emerald-600">
+                    ₹{(t.tdsDeductedAmount || (t as any).cumulativeTdsDeducted || 0).toLocaleString("en-IN")}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        t.complianceStatus === "WITHIN_LIMITS" || (t as any).status === "COMPLIANT_ON_SCHEDULE" || (t as any).status === "ZERO_PENDING_CHALLAN"
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]"
+                          : "bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]"
+                      }
+                    >
+                      {t.complianceStatus || (t as any).status || "COMPLIANT"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Generate E-Invoice Dialog */}
+      <Dialog open={isGeneratingEInvoice} onOpenChange={setIsGeneratingEInvoice}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Generate Standard e-Invoice IRN</DialogTitle>
+            <DialogDescription>
+              Dispatches TLS 1.3 request to the government Invoice Registration Portal (IRP).
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleGenerateEInvoice} className="space-y-4 pt-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold">Invoice Document Number</label>
+              <Input
+                value={invoiceDocNo}
+                onChange={(e) => setInvoiceDocNo(e.target.value)}
+                placeholder="e.g. INV-2026-901"
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold">Total Taxable Invoice Amount (₹)</label>
+              <Input
+                type="number"
+                value={invoiceAmount}
+                onChange={(e) => setInvoiceAmount(e.target.value)}
+                placeholder="0.00"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full font-bold">
+              Dispatch to IRP & Generate IRN
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <RecordFormModal
+        isOpen={isMsmeModalOpen}
+        onClose={() => setIsMsmeModalOpen(false)}
+        onSaved={loadStatutoryData}
+        title="Record MSME Supplier Bill / Section 43B(h)"
+        endpoint="/api/v1/finance/tally/statutory/tds-msme"
+        fields={MSME_FIELDS}
+        submitLabel="Register MSME Bill"
+        contextNote="Registers vendor invoice under 45-day statutory MSME payment rule in Tally general ledger."
+      />
     </div>
   );
 }

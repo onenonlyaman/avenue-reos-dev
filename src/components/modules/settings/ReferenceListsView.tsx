@@ -7,15 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Plus, Trash2, Loader2, ListChecks } from "lucide-react";
-
-interface CatalogEntry {
-  id: string;
-  category: string;
-  optionValue: string;
-  sortOrder: number;
-}
+import { Plus, Trash2, Loader2, ListChecks, AlertTriangle } from "lucide-react";
+import { settingsApi, CatalogEntry } from "@/services/settingsApi";
 
 const CATEGORY_LABELS: Record<string, string> = {
   DEPARTMENT: "Departments",
@@ -41,18 +36,15 @@ export function ReferenceListsView() {
   const [newValue, setNewValue] = useState("");
   const [newSortOrder, setNewSortOrder] = useState("");
 
+  const [retiringEntry, setRetiringEntry] = useState<CatalogEntry | null>(null);
+  const [isRetiring, setIsRetiring] = useState(false);
+
   const load = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await fetch("/api/v1/settings/catalog");
-      const envelope = await res.json();
-      if (envelope.success && Array.isArray(envelope.data)) {
-        setEntries(envelope.data);
-      } else {
-        setEntries([]);
-        if (envelope.error) setError(envelope.error.message);
-      }
+      const data = await settingsApi.getCatalog();
+      setEntries(data || []);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Reference lists could not be loaded");
     } finally {
@@ -65,24 +57,29 @@ export function ReferenceListsView() {
   }, []);
 
   const handleAdd = async () => {
-    if (!newValue.trim()) return;
+    const val = newValue.trim();
+    if (!val) return;
+
+    // Check duplicate in same category
+    const isDuplicate = entries.some(
+      (e) => e.category === newCategory && e.optionValue.toLowerCase() === val.toLowerCase()
+    );
+    if (isDuplicate) {
+      setError(`"${val}" already exists in ${CATEGORY_LABELS[newCategory] || newCategory}.`);
+      return;
+    }
+
     try {
       setIsSaving(true);
       setError(null);
-      const res = await fetch("/api/v1/settings/catalog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          category: newCategory,
-          optionValue: newValue.trim(),
-          sortOrder: Number(newSortOrder) || 0,
-        }),
+      await settingsApi.addCatalogEntry({
+        category: newCategory,
+        optionValue: val,
+        sortOrder: Number(newSortOrder) || 0,
       });
-      const envelope = await res.json();
-      if (!envelope.success) throw new Error(envelope.error?.message || "Reference entry could not be saved");
       setNewValue("");
       setNewSortOrder("");
-      load();
+      await load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Reference entry could not be saved");
     } finally {
@@ -94,12 +91,8 @@ export function ReferenceListsView() {
     try {
       setIsImporting(true);
       setError(null);
-      const res = await fetch("/api/v1/settings/catalog/sync", { method: "POST" });
-      const envelope = await res.json();
-      if (!envelope.success) {
-        throw new Error(envelope.error?.message || "Reference lists could not be imported from existing records");
-      }
-      load();
+      await settingsApi.syncCatalog();
+      await load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Reference lists could not be imported from existing records");
     } finally {
@@ -107,15 +100,18 @@ export function ReferenceListsView() {
     }
   };
 
-  const handleRetire = async (id: string) => {
+  const handleConfirmRetire = async () => {
+    if (!retiringEntry) return;
     try {
+      setIsRetiring(true);
       setError(null);
-      const res = await fetch(`/api/v1/settings/catalog?id=${id}`, { method: "DELETE" });
-      const envelope = await res.json();
-      if (!envelope.success) throw new Error(envelope.error?.message || "Reference entry could not be retired");
-      load();
+      await settingsApi.deleteCatalogEntry(retiringEntry.id);
+      setRetiringEntry(null);
+      await load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Reference entry could not be retired");
+    } finally {
+      setIsRetiring(false);
     }
   };
 
@@ -144,7 +140,7 @@ export function ReferenceListsView() {
             size="sm"
             className="h-7 text-[11px] font-medium"
             onClick={handleImportFromRecords}
-            disabled={isImporting}
+            disabled={isImporting || isLoading}
           >
             {isImporting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
             Import From Existing Records
@@ -153,7 +149,7 @@ export function ReferenceListsView() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
           <div className="space-y-1.5 md:col-span-1">
-            <Label className="text-xs font-medium">List</Label>
+            <Label className="text-xs font-medium">Reference List</Label>
             <Select value={newCategory} onValueChange={(val) => val && setNewCategory(val)}>
               <SelectTrigger className="h-8 text-xs w-full">
                 <SelectValue placeholder="Select list" />
@@ -169,27 +165,29 @@ export function ReferenceListsView() {
           </div>
 
           <div className="space-y-1.5 md:col-span-2">
-            <Label className="text-xs font-medium">Entry</Label>
+            <Label className="text-xs font-medium">Entry Value</Label>
             <Input
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               placeholder="e.g. Site Construction Operations"
               className="h-8 text-xs"
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Order</Label>
+              <Label className="text-xs font-medium">Sort Order</Label>
               <Input
                 type="number"
                 value={newSortOrder}
                 onChange={(e) => setNewSortOrder(e.target.value)}
+                placeholder="0"
                 className="h-8 text-xs font-mono"
               />
             </div>
             <div className="flex items-end">
-              <Button size="sm" className="h-8 text-xs w-full" onClick={handleAdd} disabled={isSaving}>
+              <Button size="sm" className="h-8 text-xs w-full" onClick={handleAdd} disabled={isSaving || !newValue.trim()}>
                 {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
                 Add
               </Button>
@@ -218,7 +216,7 @@ export function ReferenceListsView() {
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
                   <h4 className="text-xs font-bold text-foreground">{group.label}</h4>
                   <Badge variant="outline" className="text-[10px] font-mono">
-                    {group.items.length}
+                    {group.items.length} {group.items.length === 1 ? "entry" : "entries"}
                   </Badge>
                 </div>
                 <Table>
@@ -238,8 +236,9 @@ export function ReferenceListsView() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 text-[11px] text-red-900 hover:bg-red-50"
-                            onClick={() => handleRetire(item.id)}
+                            className="h-7 text-[11px] text-red-900 hover:bg-red-50 hover:text-red-950"
+                            onClick={() => setRetiringEntry(item)}
+                            title="Retire reference entry"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -252,6 +251,42 @@ export function ReferenceListsView() {
             ))}
         </div>
       )}
+
+      <Dialog open={!!retiringEntry} onOpenChange={(open) => !open && setRetiringEntry(null)}>
+        <DialogContent className="sm:max-w-md w-full p-6 bg-card text-card-foreground">
+          <DialogHeader className="border-b border-border pb-3">
+            <DialogTitle className="text-base font-bold font-heading text-rose-900 flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-rose-700" />
+              Retire Reference Entry
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Are you sure you want to retire &quot;{retiringEntry?.optionValue}&quot; from &quot;{retiringEntry ? CATEGORY_LABELS[retiringEntry.category] : ""}&quot;? Existing records will keep historical data, but this option will no longer appear in new selection dropdowns.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="border-t border-border pt-3 gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setRetiringEntry(null)} disabled={isRetiring}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs font-medium bg-rose-700 hover:bg-rose-800 text-white"
+              onClick={handleConfirmRetire}
+              disabled={isRetiring}
+            >
+              {isRetiring ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Retiring...
+                </span>
+              ) : (
+                "Confirm Retirement"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

@@ -3,17 +3,19 @@
 import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Wrench, AlertCircle, Loader2 , Plus } from "lucide-react";
+import { Wrench, AlertCircle, Loader2, Plus, RefreshCw, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
 import { facilityApi, MaintenanceTicket } from "@/services/facilityApi";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
-import { Button } from "@/components/ui/button";
 
 export function ServiceTicketsView() {
   const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -32,6 +34,23 @@ export function ServiceTicketsView() {
     loadData();
   }, []);
 
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      setUpdatingId(id);
+      await facilityApi.updateTicketStatus(id, newStatus);
+      await loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Ticket status could not be updated");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const openTickets = tickets.filter((t) => t.status === "OPEN").length;
+  const inProgressTickets = tickets.filter((t) => t.status === "IN_PROGRESS").length;
+  const resolvedTickets = tickets.filter((t) => t.status === "RESOLVED").length;
+  const slaBreachCount = tickets.filter((t) => t.slaStatus === "SLA Breach" || t.slaStatus === "SLA Warning").length;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-card p-4 rounded-lg border border-border shadow-xs">
@@ -39,11 +58,65 @@ export function ServiceTicketsView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Facility Maintenance Helpdesk & SLA Engine
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time tracking of tenant maintenance requests, repairs, and contractor SLAs
+          </p>
         </div>
-      <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
-        <Plus className="h-3.5 w-3.5" />
-        Log Service Request
-      </Button>
+
+        <div className="flex items-center gap-2">
+          <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Log Service Request
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1 font-medium"
+            onClick={loadData}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`h-3 w-3 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <CorporateStatCard
+          label="Open Service Requests"
+          value={`${openTickets} Open`}
+          subtext="Awaiting contractor dispatch"
+          icon={Clock}
+          trend={openTickets > 0 ? "Action Required" : "All Clear"}
+          trendDirection={openTickets > 0 ? "down" : "up"}
+        />
+
+        <CorporateStatCard
+          label="In Active Rectification"
+          value={`${inProgressTickets} Work Orders`}
+          subtext="Contractor on-site execution"
+          icon={Wrench}
+          trend="In Progress"
+          trendDirection="neutral"
+        />
+
+        <CorporateStatCard
+          label="SLA Compliance Alerts"
+          value={`${slaBreachCount} Alerts`}
+          subtext="Breaches and nearing deadlines"
+          icon={ShieldAlert}
+          trend={slaBreachCount > 0 ? "Breach Warning" : "100% On-Track"}
+          trendDirection={slaBreachCount > 0 ? "down" : "up"}
+        />
+
+        <CorporateStatCard
+          label="Resolved Maintenance"
+          value={`${resolvedTickets} Closed`}
+          subtext="Sign-off verified by residents"
+          icon={CheckCircle2}
+          trend="Completed"
+          trendDirection="up"
+        />
       </div>
 
       {isLoading ? (
@@ -79,6 +152,7 @@ export function ServiceTicketsView() {
                 <TableHead className="text-xs font-semibold text-center">SLA Compliance</TableHead>
                 <TableHead className="text-xs font-semibold">Assigned Contractor</TableHead>
                 <TableHead className="text-xs font-semibold text-center">Status</TableHead>
+                <TableHead className="text-xs font-semibold text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -93,15 +167,26 @@ export function ServiceTicketsView() {
                 let priorityBadgeStyle = "bg-slate-100 text-slate-800 border-slate-300";
                 if (t.priority === "Critical") {
                   priorityBadgeStyle = "bg-rose-100 text-rose-800 border-rose-300";
-                } else if (t.priority === "Moderate") {
+                } else if (t.priority === "High") {
                   priorityBadgeStyle = "bg-amber-100 text-amber-800 border-amber-300";
                 }
+
+                let statusBadgeStyle = "bg-slate-100 text-slate-800 border-slate-300";
+                if (t.status === "OPEN") {
+                  statusBadgeStyle = "bg-blue-100 text-blue-800 border-blue-300";
+                } else if (t.status === "IN_PROGRESS") {
+                  statusBadgeStyle = "bg-amber-100 text-amber-800 border-amber-300";
+                } else if (t.status === "RESOLVED") {
+                  statusBadgeStyle = "bg-emerald-100 text-emerald-800 border-emerald-300";
+                }
+
+                const isUpdating = updatingId === t.id;
 
                 return (
                   <TableRow key={t.id} className="hover:bg-muted/30 transition-colors">
                     <TableCell className="text-xs py-3 font-medium text-foreground">
-                      <div>{t.ticketSummary}</div>
-                      <span className="text-[10px] text-muted-foreground font-mono">Ref: {t.ticketReference}</span>
+                      <div className="font-semibold">{t.ticketSummary}</div>
+                      <span className="text-[10px] text-muted-foreground font-mono">Ref: {t.ticketReference} • {t.loggedDate}</span>
                     </TableCell>
                     <TableCell className="text-xs py-3 text-muted-foreground">
                       {t.propertyLocation}
@@ -120,12 +205,41 @@ export function ServiceTicketsView() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs py-3 font-medium text-foreground">
-                      {t.assignedContractor}
+                      {t.assignedContractor || "Unassigned"}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center">
-                      <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">
+                      <Badge variant="outline" className={`text-[10px] font-mono font-bold ${statusBadgeStyle}`}>
                         {t.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs py-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {t.status === "OPEN" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[11px] px-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                            onClick={() => handleStatusChange(t.id, "IN_PROGRESS")}
+                            disabled={isUpdating}
+                          >
+                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Start Work"}
+                          </Button>
+                        )}
+                        {t.status === "IN_PROGRESS" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[11px] px-2 border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                            onClick={() => handleStatusChange(t.id, "RESOLVED")}
+                            disabled={isUpdating}
+                          >
+                            {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : "Resolve"}
+                          </Button>
+                        )}
+                        {t.status === "RESOLVED" && (
+                          <span className="text-[10px] text-emerald-700 font-medium">Closed</span>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

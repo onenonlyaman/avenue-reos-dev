@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
@@ -8,6 +7,8 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const tenantId = auth.user.tenantId;
+
     await runtimeDdl("table:integration_approvals", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS integration_approvals (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,7 +24,9 @@ export async function GET(request: NextRequest) {
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM integration_approvals WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND status = 'PENDING_APPROVAL' ORDER BY created_at DESC
+      SELECT * FROM integration_approvals 
+      WHERE tenant_id = ${tenantId}::uuid AND status = 'PENDING_APPROVAL' 
+      ORDER BY created_at DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -34,6 +37,7 @@ export async function GET(request: NextRequest) {
       justification: r.justification,
       status: r.status,
       requiresHitl: Boolean(r.requires_hitl),
+      createdAt: r.created_at,
     }));
 
     return NextResponse.json({
@@ -60,4 +64,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-

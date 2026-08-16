@@ -53,53 +53,41 @@ export default function LegalPage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="parcels"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="parcels" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Landmark className="h-3.5 w-3.5" />
             Land Bank & Sourcing
           </TabsTrigger>
 
-          <TabsTrigger
-            value="jdas"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="jdas" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Handshake className="h-3.5 w-3.5" />
             Joint Development Agreements
           </TabsTrigger>
 
-          <TabsTrigger
-            value="rera"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="rera" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <FileCheck className="h-3.5 w-3.5" />
             MahaRERA Compliance
           </TabsTrigger>
 
-          <TabsTrigger
-            value="title"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="title" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <ShieldAlert className="h-3.5 w-3.5" />
             Title & Litigation Tracker
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="parcels" className="outline-none space-y-4 pt-2">
-          <LandAcquisitionView />
+        <TabsContent value="parcels" className="outline-none space-y-4">
+          <LandAcquisitionView onParcelCreated={loadPendingApprovals} />
         </TabsContent>
 
-        <TabsContent value="jdas" className="outline-none space-y-4 pt-2">
+        <TabsContent value="jdas" className="outline-none space-y-4">
           <JointVenturesView />
         </TabsContent>
 
-        <TabsContent value="rera" className="outline-none space-y-4 pt-2">
+        <TabsContent value="rera" className="outline-none space-y-4">
           <ReraComplianceView />
         </TabsContent>
 
-        <TabsContent value="title" className="outline-none space-y-4 pt-2">
+        <TabsContent value="title" className="outline-none space-y-4">
           <TitleLitigationView />
         </TabsContent>
       </Tabs>

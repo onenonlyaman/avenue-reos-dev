@@ -4,12 +4,17 @@ import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Building2, AlertCircle, Loader2 , Plus } from "lucide-react";
+import { Building2, AlertCircle, Loader2, Plus } from "lucide-react";
 import { procurementApi, VendorPerformance } from "@/services/procurementApi";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
 import { Button } from "@/components/ui/button";
 
-export function VendorDirectoryView() {
+interface VendorDirectoryViewProps {
+  refreshKey?: number;
+  onRefreshNeeded?: () => void;
+}
+
+export function VendorDirectoryView({ refreshKey, onRefreshNeeded }: VendorDirectoryViewProps) {
   const [vendors, setVendors] = useState<VendorPerformance[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
@@ -30,7 +35,12 @@ export function VendorDirectoryView() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [refreshKey]);
+
+  const handleSaved = () => {
+    loadData();
+    if (onRefreshNeeded) onRefreshNeeded();
+  };
 
   return (
     <div className="space-y-6">
@@ -40,10 +50,10 @@ export function VendorDirectoryView() {
             Approved Material Vendors & Performance Matrix
           </h3>
         </div>
-      <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
-        <Plus className="h-3.5 w-3.5" />
-        Register Vendor
-      </Button>
+        <Button size="sm" className="h-8 text-xs font-medium gap-1.5 shrink-0" onClick={() => setIsFormOpen(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          Register Vendor
+        </Button>
       </div>
 
       {isLoading ? (
@@ -62,13 +72,13 @@ export function VendorDirectoryView() {
       ) : vendors.length === 0 ? (
         <CorporateEmptyState
           title="No Approved Vendors Found"
-          description="No vendors on record."
+          description="No material vendors on record."
           actionLabel="Register Vendor"
           onAction={() => setIsFormOpen(true)}
           icon={Building2}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -102,7 +112,7 @@ export function VendorDirectoryView() {
                       {v.specialty}
                     </TableCell>
                     <TableCell className="text-xs py-3 font-mono text-muted-foreground">
-                      {v.gstinReference}
+                      {v.gstinReference || "Unregistered"}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center font-mono font-bold text-foreground">
                       <div className="flex items-center justify-center gap-1.5">
@@ -110,7 +120,7 @@ export function VendorDirectoryView() {
                         <div className="h-1.5 w-16 bg-muted rounded-full overflow-hidden">
                           <div
                             className="bg-emerald-600 h-full rounded-full"
-                            style={{ width: `${Math.min(100, v.performanceRating)}%` }}
+                            style={{ width: `${Math.min(100, Math.max(0, v.performanceRating))}%` }}
                           />
                         </div>
                       </div>
@@ -134,7 +144,7 @@ export function VendorDirectoryView() {
       <RecordFormModal
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        onSaved={loadData}
+        onSaved={handleSaved}
         title="Register Vendor"
         endpoint="/api/v1/procurement/vendors"
         submitLabel="Register Vendor"

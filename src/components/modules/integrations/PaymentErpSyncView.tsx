@@ -5,20 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { CreditCard, Database, RefreshCw, Key, AlertCircle, Loader2 } from "lucide-react";
+import { CreditCard, Database, RefreshCw, Key, AlertCircle, Loader2, Settings2 } from "lucide-react";
 import { integrationsApi, ConnectorStatus } from "@/services/integrationsApi";
 import { ConnectorConfigModal } from "./ConnectorConfigModal";
 
 interface PaymentErpSyncViewProps {
   onOpenHitlDrawer: () => void;
+  onSyncTriggered?: () => void;
 }
 
-export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps) {
+export function PaymentErpSyncView({ onOpenHitlDrawer, onSyncTriggered }: PaymentErpSyncViewProps) {
   const [connectors, setConnectors] = useState<ConnectorStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncingConnector, setSyncingConnector] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedConnector, setSelectedConnector] = useState<ConnectorStatus | null>(null);
 
   const loadData = async () => {
     try {
@@ -33,25 +35,46 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
     }
   };
 
-  const handleManualSync = async (connectorName: string) => {
+  const handleManualSync = async (connector: ConnectorStatus) => {
     try {
-      setIsSyncing(true);
-      const res = await integrationsApi.triggerManualSync(connectorName, 1550000);
+      setSyncingConnector(connector.connectorName);
+      setError(null);
+      // If connector has high unreconciled webhooks or high voucher batch, use batch amount; otherwise regular sync
+      const syncAmount = connector.unreconciledWebhooks > 0 ? 1250000 : 450000;
+      const res = await integrationsApi.triggerManualSync(connector.connectorName, syncAmount);
+      
       if (res.requiresHitl) {
+        if (onSyncTriggered) onSyncTriggered();
         onOpenHitlDrawer();
       } else {
         await loadData();
+        if (onSyncTriggered) onSyncTriggered();
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Manual sync could not be completed");
     } finally {
-      setIsSyncing(false);
+      setSyncingConnector(null);
     }
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const formatDateTime = (timestamp: string) => {
+    if (!timestamp) return "Never Synced";
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    return date.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    });
+  };
 
   if (isLoading) {
     return (
@@ -85,6 +108,9 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
           <h3 className="text-sm font-bold font-heading text-foreground">
             Payment Gateway & Enterprise ERP Synchronization Engine
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Automated double-entry general ledger voucher mapping and online payment capture.
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -92,20 +118,26 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
             variant="outline"
             size="sm"
             className="gap-1.5 text-xs font-semibold"
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              setSelectedConnector(null);
+              setIsModalOpen(true);
+            }}
           >
             <Key className="h-3.5 w-3.5" />
-            Configure Connector Credentials
+            Configure Connector
           </Button>
 
           <Button
             size="sm"
             className="gap-1.5 text-xs font-semibold"
-            onClick={() => handleManualSync("Tally Prime Local Bridge")}
-            disabled={isSyncing}
+            onClick={() => {
+              const tally = connectors.find((c) => c.connectorName === "Tally Prime Local Bridge") || connectors[0];
+              if (tally) handleManualSync(tally);
+            }}
+            disabled={syncingConnector !== null || connectors.length === 0}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            Force Manual Ledger Sync
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingConnector ? "animate-spin" : ""}`} />
+            Sync Active Ledger
           </Button>
         </div>
       </div>
@@ -121,8 +153,8 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
         />
 
         <CorporateStatCard
-          label="Razorpay Settlement Health"
-          value="OPERATIONAL"
+          label="Payment Gateway Health"
+          value={connectors.some((c) => c.category === "Payment Gateway" && c.status === "CONNECTED") ? "OPERATIONAL" : "INACTIVE"}
           subtext="Payment Ingestion"
           icon={CreditCard}
           trend="Webhook Listener Active"
@@ -141,7 +173,7 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
         <CorporateStatCard
           label="Unreconciled Webhooks"
           value={totalWebhooks.toString()}
-          subtext="Pending Demand Note Match"
+          subtext="Pending Ledger Match"
           icon={AlertCircle}
           trend="Reconciliation Queue"
           trendDirection={totalWebhooks > 0 ? "down" : "up"}
@@ -153,7 +185,10 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
           title="No Active Payment or ERP Connectors"
           description="No payment or accounting connectors configured."
           actionLabel="Configure Connector Credentials"
-          onAction={() => setIsModalOpen(true)}
+          onAction={() => {
+            setSelectedConnector(null);
+            setIsModalOpen(true);
+          }}
           icon={Database}
         />
       ) : (
@@ -168,6 +203,10 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
                 {conn.status === "CONNECTED" ? (
                   <Badge variant="outline" className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border-emerald-300">
                     CONNECTED
+                  </Badge>
+                ) : conn.status === "DEGRADED" ? (
+                  <Badge variant="outline" className="text-[10px] font-bold bg-amber-100 text-amber-900 border-amber-300">
+                    DEGRADED
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="text-[10px] font-bold bg-red-100 text-red-800 border-red-300">
@@ -187,9 +226,7 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-muted-foreground">Last Successful Sync</span>
-                  <span className="font-bold text-foreground">
-                    {new Date(conn.lastSyncTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
+                  <span className="font-bold text-foreground">{formatDateTime(conn.lastSyncTime)}</span>
                 </div>
               </div>
 
@@ -197,10 +234,24 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-7 text-[11px]"
-                  onClick={() => handleManualSync(conn.connectorName)}
-                  disabled={isSyncing}
+                  className="h-7 text-[11px] gap-1"
+                  onClick={() => {
+                    setSelectedConnector(conn);
+                    setIsModalOpen(true);
+                  }}
                 >
+                  <Settings2 className="h-3 w-3" />
+                  Configure
+                </Button>
+
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-7 text-[11px] gap-1"
+                  onClick={() => handleManualSync(conn)}
+                  disabled={syncingConnector === conn.connectorName}
+                >
+                  <RefreshCw className={`h-3 w-3 ${syncingConnector === conn.connectorName ? "animate-spin" : ""}`} />
                   Manual Sync
                 </Button>
               </div>
@@ -211,17 +262,14 @@ export function PaymentErpSyncView({ onOpenHitlDrawer }: PaymentErpSyncViewProps
 
       <ConnectorConfigModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={(updated) => {
-          setConnectors((prev) => {
-            const idx = prev.findIndex((c) => c.id === updated.id);
-            if (idx >= 0) {
-              const copy = [...prev];
-              copy[idx] = updated;
-              return copy;
-            }
-            return [updated, ...prev];
-          });
+        initialConnector={selectedConnector}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedConnector(null);
+        }}
+        onSuccess={() => {
+          loadData();
+          if (onSyncTriggered) onSyncTriggered();
         }}
       />
     </div>

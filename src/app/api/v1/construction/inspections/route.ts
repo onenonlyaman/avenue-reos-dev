@@ -12,62 +12,60 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
+    const tenantId = auth.user.tenantId;
 
-    const ncrModel = (prisma as any).qualityNcrReport;
-    let ncrReports: any[] = [];
+    const where: any = { tenantId };
 
-    if (ncrModel?.findMany) {
-      const where: any = {};
-      if (projectId && projectId !== "All" && projectId !== "All Nashik Developments") {
-        if (isUuid(projectId)) {
-          where.OR = [
-            { site: { projectId } },
-            { site: { project: { projectName: { contains: projectId, mode: "insensitive" } } } },
-          ];
-        } else {
-          where.site = { project: { projectName: { contains: projectId, mode: "insensitive" } } };
-        }
-      }
-      ncrReports = await ncrModel.findMany({
-        where,
-        include: {
-          site: { include: { project: true } },
-          inspector: true,
-        },
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT q.*, s.site_name, p.project_name, e.full_name as inspector_name
-          FROM quality_ncr_reports q
-          LEFT JOIN construction_sites s ON q.site_id = s.id
-          LEFT JOIN master_project p ON s.project_id = p.id
-          LEFT JOIN master_employee e ON q.inspector_id = e.id
-          WHERE q.tenant_id = ${ACTIVE_TENANT_ID}::uuid
-        `;
-        ncrReports = raw.map((r: any) => ({
-          id: r.id,
-          createdAt: r.created_at,
-          defectSeverity: r.defect_severity,
-          status: r.status,
-          description: r.description,
-          site: { siteName: r.site_name, project: { projectName: r.project_name } },
-          inspector: { fullName: r.inspector_name },
-        }));
-      } catch {
-        ncrReports = [];
+    if (projectId && projectId !== "All" && projectId !== "All Nashik Developments") {
+      if (isUuid(projectId)) {
+        where.site = { projectId };
+      } else {
+        where.site = { project: { projectName: { contains: projectId, mode: "insensitive" } } };
       }
     }
 
-    const mapped = (ncrReports || []).map((n: any) => ({
+    const ncrReports = await prisma.qualityNcrReport.findMany({
+      where,
+      include: {
+        site: {
+          include: {
+            project: {
+              select: {
+                id: true,
+                projectName: true,
+              },
+            },
+          },
+        },
+        inspector: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+        contractor: {
+          select: {
+            id: true,
+            companyName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const mapped = ncrReports.map((n) => ({
       id: n.id,
       inspectionDate: n.createdAt ? new Date(n.createdAt).toISOString().split("T")[0] : "",
-      siteLocation: n.site?.siteName || n.site?.project?.projectName || "",
+      siteLocation: n.site?.siteName || n.site?.project?.projectName || "Construction Site",
       category: n.defectSeverity === "CRITICAL" ? "Safety & Structural Risk Audit" : "Site Quality Inspection",
-      inspectingEngineer: n.inspector?.fullName || "",
+      inspectingEngineer: n.inspector?.fullName || "Site Inspector",
+      contractorName: n.contractor?.companyName || "",
+      defectSeverity: n.defectSeverity,
       status: n.status === "CLOSED" || n.status === "RESOLVED" ? "PASSED" : n.status === "OPEN" ? "VIOLATION_FLAGGED" : "RESOLVED",
       remarks: n.description || "",
+      correctiveAction: n.correctiveAction || "",
+      projectName: n.site?.project?.projectName || "",
+      projectId: n.site?.projectId || "",
     }));
 
     return NextResponse.json({
@@ -101,9 +99,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { ncrNumber, defectSeverity, description, correctiveAction, inspectorName, contractorName } = body;
+    const { projectId, siteId, ncrNumber, defectSeverity, description, correctiveAction, inspectorName, contractorName } = body;
+    const tenantId = auth.user.tenantId;
 
-    if (!defectSeverity || !description) {
+    if (!defectSeverity || typeof defectSeverity !== "string" || !["MINOR", "MAJOR", "CRITICAL"].includes(defectSeverity.toUpperCase())) {
       return NextResponse.json({
         success: false,
         status_code: 400,
@@ -111,37 +110,97 @@ export async function POST(request: NextRequest) {
         request_id: `req-${Date.now()}`,
         data: null,
         error: {
-          code: "INCOMPLETE_INSPECTION_RECORD",
-          message: "Defect severity and observation details are required",
+          code: "INVALID_SEVERITY",
+          message: "Defect severity must be MINOR, MAJOR, or CRITICAL",
         },
         meta: null,
       }, { status: 400 });
     }
 
-    const site = await prisma.$queryRaw<any[]>`
-      SELECT id FROM construction_sites WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid LIMIT 1
-    `;
-
-    if (!site || site.length === 0) {
+    if (!description || typeof description !== "string" || !description.trim()) {
       return NextResponse.json({
         success: false,
-        status_code: 422,
+        status_code: 400,
         timestamp: new Date().toISOString(),
         request_id: `req-${Date.now()}`,
         data: null,
         error: {
-          code: "NO_SITE_ON_RECORD",
-          message: "Register a construction site before logging inspections",
+          code: "MISSING_DESCRIPTION",
+          message: "Observation and defect description are required",
         },
         meta: null,
-      }, { status: 422 });
+      }, { status: 400 });
     }
 
-    const inspector = inspectorName
-      ? await prisma.masterEmployee.findFirst({
-          where: { tenantId: ACTIVE_TENANT_ID, fullName: { contains: inspectorName, mode: "insensitive" }, status: "ACTIVE" },
-        })
-      : await prisma.masterEmployee.findFirst({ where: { tenantId: ACTIVE_TENANT_ID, status: "ACTIVE" } });
+    // Resolve site
+    let site = null;
+    if (siteId && isUuid(siteId)) {
+      site = await prisma.constructionSite.findFirst({ where: { id: siteId, tenantId } });
+    } else if (projectId) {
+      if (isUuid(projectId)) {
+        site = await prisma.constructionSite.findFirst({ where: { projectId, tenantId } });
+      } else {
+        const proj = await prisma.masterProject.findFirst({
+          where: { tenantId, projectName: { equals: projectId.trim(), mode: "insensitive" } },
+        });
+        if (proj) {
+          site = await prisma.constructionSite.findFirst({ where: { projectId: proj.id, tenantId } });
+        }
+      }
+    }
+
+    if (!site) {
+      site = await prisma.constructionSite.findFirst({
+        where: { tenantId },
+      });
+    }
+
+    if (!site) {
+      // Find active project to attach site
+      const project = await prisma.masterProject.findFirst({ where: { tenantId } });
+      const emp = await prisma.masterEmployee.findFirst({ where: { tenantId, status: "ACTIVE" } });
+
+      if (!project || !emp) {
+        return NextResponse.json({
+          success: false,
+          status_code: 422,
+          timestamp: new Date().toISOString(),
+          request_id: `req-${Date.now()}`,
+          data: null,
+          error: {
+            code: "NO_SITE_ON_RECORD",
+            message: "A project and site engineer must be registered before logging quality inspections",
+          },
+          meta: null,
+        }, { status: 422 });
+      }
+
+      site = await prisma.constructionSite.create({
+        data: {
+          tenantId,
+          projectId: project.id,
+          siteCode: `SITE-${project.projectCode || Date.now().toString().slice(-4)}`,
+          siteName: `${project.projectName} Site`,
+          gpsCoordinates: project.location || "Nashik Site",
+          status: "ACTIVE",
+          siteEngineerId: emp.id,
+        },
+      });
+    }
+
+    // Resolve inspector
+    let inspector = null;
+    if (inspectorName && typeof inspectorName === "string" && inspectorName.trim()) {
+      inspector = await prisma.masterEmployee.findFirst({
+        where: { tenantId, fullName: { contains: inspectorName.trim(), mode: "insensitive" }, status: "ACTIVE" },
+      });
+    }
+
+    if (!inspector) {
+      inspector = await prisma.masterEmployee.findFirst({
+        where: { tenantId, status: "ACTIVE" },
+      });
+    }
 
     if (!inspector) {
       return NextResponse.json({
@@ -152,33 +211,44 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "NO_INSPECTOR_ON_RECORD",
-          message: "Register an inspecting engineer in the workforce directory first",
+          message: "An active inspecting engineer must exist in the workforce directory",
         },
         meta: null,
       }, { status: 422 });
     }
 
-    const contractor = contractorName
-      ? await prisma.masterVendor.findFirst({
-          where: { tenantId: ACTIVE_TENANT_ID, companyName: { contains: contractorName, mode: "insensitive" } },
-        })
-      : null;
+    // Resolve contractor if provided
+    let contractor = null;
+    if (contractorName && typeof contractorName === "string" && contractorName.trim()) {
+      contractor = await prisma.masterVendor.findFirst({
+        where: { tenantId, companyName: { contains: contractorName.trim(), mode: "insensitive" } },
+      });
+    }
 
-    const reference = ncrNumber || `NCR-${Date.now().toString().slice(-6)}`;
+    const reference = (ncrNumber && typeof ncrNumber === "string" ? ncrNumber.trim() : "") || `NCR-${Date.now().toString().slice(-6)}`;
 
-    const inserted = await prisma.$queryRaw<any[]>`
-      INSERT INTO quality_ncr_reports (
-        id, tenant_id, ncr_number, site_id, inspector_id, contractor_id,
-        defect_severity, status, description, corrective_action
-      ) VALUES (
-        gen_random_uuid(), ${ACTIVE_TENANT_ID}::uuid, ${reference}, ${site[0].id}::uuid, ${inspector.id}::uuid,
-        ${contractor ? contractor.id : null}::uuid,
-        ${defectSeverity}, 'OPEN', ${description}, ${correctiveAction || null}
-      )
-      RETURNING *
-    `;
-
-    const created = inserted[0];
+    const createdNcr = await prisma.qualityNcrReport.create({
+      data: {
+        tenantId,
+        ncrNumber: reference,
+        siteId: site.id,
+        inspectorId: inspector.id,
+        contractorId: contractor ? contractor.id : null,
+        defectSeverity: defectSeverity.toUpperCase(),
+        status: "OPEN",
+        description: description.trim(),
+        correctiveAction: correctiveAction && typeof correctiveAction === "string" ? correctiveAction.trim() : null,
+      },
+      include: {
+        site: {
+          include: {
+            project: true,
+          },
+        },
+        inspector: true,
+        contractor: true,
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -186,11 +256,15 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
       request_id: `req-${Date.now()}`,
       data: {
-        id: created.id,
-        ncrNumber: created.ncr_number,
-        defectSeverity: created.defect_severity,
-        status: created.status,
-        description: created.description,
+        id: createdNcr.id,
+        inspectionDate: createdNcr.createdAt.toISOString().split("T")[0],
+        siteLocation: createdNcr.site.siteName,
+        category: createdNcr.defectSeverity === "CRITICAL" ? "Safety & Structural Risk Audit" : "Site Quality Inspection",
+        inspectingEngineer: createdNcr.inspector.fullName,
+        contractorName: createdNcr.contractor?.companyName || "",
+        defectSeverity: createdNcr.defectSeverity,
+        status: "VIOLATION_FLAGGED",
+        remarks: createdNcr.description,
       },
       error: null,
       meta: null,
@@ -210,4 +284,5 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 

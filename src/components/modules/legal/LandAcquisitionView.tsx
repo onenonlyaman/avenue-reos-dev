@@ -10,7 +10,11 @@ import { Landmark, Layers, Scale, Plus, AlertCircle, Loader2 } from "lucide-reac
 import { legalApi, LandParcel } from "@/services/legalApi";
 import { AcquireLandModal } from "./AcquireLandModal";
 
-export function LandAcquisitionView() {
+interface LandAcquisitionViewProps {
+  onParcelCreated?: () => void;
+}
+
+export function LandAcquisitionView({ onParcelCreated }: LandAcquisitionViewProps) {
   const [parcels, setParcels] = useState<LandParcel[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,9 +37,16 @@ export function LandAcquisitionView() {
     loadData();
   }, []);
 
-  const totalAcres = parcels.reduce((sum, p) => sum + p.plotAreaAcres, 0);
-  const totalOutlayLakhs = parcels.reduce((sum, p) => sum + p.totalOutlayLakhs, 0);
-  const totalConstructibleSqft = parcels.reduce((sum, p) => sum + p.constructibleSqft, 0);
+  const handleCreated = (newParcel: LandParcel) => {
+    loadData();
+    if (onParcelCreated) {
+      onParcelCreated();
+    }
+  };
+
+  const totalAcres = parcels.reduce((sum, p) => sum + (Number(p.plotAreaAcres) || 0), 0);
+  const totalOutlayLakhs = parcels.reduce((sum, p) => sum + (Number(p.totalOutlayLakhs) || 0), 0);
+  const totalConstructibleSqft = parcels.reduce((sum, p) => sum + (Number(p.constructibleSqft) || 0), 0);
   const activePipelineCount = parcels.filter((p) => p.acquisitionPhase !== "ACQUIRED" && p.acquisitionPhase !== "REJECTED").length;
 
   return (
@@ -79,7 +90,7 @@ export function LandAcquisitionView() {
         <CorporateStatCard
           label="Committed Land Capital"
           value={`₹${(totalOutlayLakhs / 100).toFixed(2)} Cr`}
-          subtext="Gross outlay including 7% stamp duty"
+          subtext="Gross outlay including 7% stamp duty & 1% registration"
           icon={Scale}
           trend="Capital Outlay"
           trendDirection="up"
@@ -153,15 +164,20 @@ export function LandAcquisitionView() {
                     <TableCell className="text-xs py-3 font-semibold text-foreground">
                       <div>{p.parcelDescription}</div>
                       <span className="text-[10px] text-muted-foreground font-mono">Ref: {p.parcelReference}</span>
+                      {p.rejectionReason && (
+                        <div className="text-[10px] text-rose-700 mt-0.5 italic">
+                          Rejection note: {p.rejectionReason}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs py-3 font-medium text-foreground">
                       {p.locationZone}
                     </TableCell>
                     <TableCell className="text-xs py-3 text-right font-mono font-bold text-foreground">
-                      {p.plotAreaAcres} Acres
+                      {Number(p.plotAreaAcres).toFixed(2)} Acres
                     </TableCell>
                     <TableCell className="text-xs py-3 text-center font-mono font-bold text-foreground">
-                      {p.applicableFsi} FSI
+                      {Number(p.applicableFsi).toFixed(2)} FSI
                     </TableCell>
                     <TableCell className="text-xs py-3 text-right font-mono font-bold text-primary text-sm">
                       ₹{p.totalOutlayLakhs.toFixed(2)} Lakhs
@@ -187,7 +203,7 @@ export function LandAcquisitionView() {
       <AcquireLandModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onParcelCreated={loadData}
+        onParcelCreated={handleCreated}
       />
     </div>
   );

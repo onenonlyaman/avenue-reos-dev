@@ -13,71 +13,47 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
+    const tenantId = auth.user.tenantId;
 
-    const wbsModel = (prisma as any).constructionWbsMilestone;
-    let milestones: any[] = [];
+    const where: any = { tenantId };
 
-    if (wbsModel?.findMany) {
-      const where: any = {};
-      if (projectId && projectId !== "All" && projectId !== "All Nashik Developments") {
-        if (isUuid(projectId)) {
-          where.OR = [
-            { projectId },
-            { project: { projectName: { contains: projectId, mode: "insensitive" } } },
-          ];
-        } else {
-          where.project = { projectName: { contains: projectId, mode: "insensitive" } };
-        }
-      }
-      milestones = await wbsModel.findMany({
-        where,
-        include: { project: true },
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT m.*, p.project_name
-          FROM construction_wbs_milestones m
-          LEFT JOIN master_project p ON m.project_id = p.id
-          WHERE m.tenant_id = ${ACTIVE_TENANT_ID}::uuid
-        `;
-        milestones = raw.map((r: any) => ({
-          id: r.id,
-          milestoneCode: r.milestone_code,
-          executionPhase: r.execution_phase,
-          milestoneTitle: r.milestone_title,
-          phaseWeightagePct: r.phase_weightage_pct,
-          physicalCompletionPct: r.physical_completion_pct,
-          targetStartDate: r.target_start_date,
-          targetCompletionDate: r.target_completion_date,
-          actualCompletionDate: r.actual_completion_date,
-          assignedContractor: r.assigned_contractor,
-          financialAllocation: r.financial_allocation,
-          status: r.status,
-          project: { projectName: r.project_name },
-          projectId: r.project_id,
-        }));
-      } catch {
-        milestones = [];
+    if (projectId && projectId !== "All" && projectId !== "All Nashik Developments") {
+      if (isUuid(projectId)) {
+        where.projectId = projectId;
+      } else {
+        where.project = { projectName: { contains: projectId, mode: "insensitive" } };
       }
     }
 
-    const mapped = (milestones || []).map((m: any) => ({
+    const milestones = await prisma.constructionWbsMilestone.findMany({
+      where,
+      include: {
+        project: {
+          select: {
+            id: true,
+            projectName: true,
+            projectCode: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const mapped = milestones.map((m) => ({
       id: m.id,
-      milestoneCode: m.milestoneCode || m.milestone_code,
-      executionPhase: m.executionPhase || m.execution_phase,
-      milestoneTitle: m.milestoneTitle || m.milestone_title,
-      phaseWeightagePct: Number(m.phaseWeightagePct ?? m.phase_weightage_pct ?? 0),
-      physicalCompletionPct: Number(m.physicalCompletionPct ?? m.physical_completion_pct ?? 0),
+      milestoneCode: m.milestoneCode,
+      executionPhase: m.executionPhase,
+      milestoneTitle: m.milestoneTitle,
+      phaseWeightagePct: Number(m.phaseWeightagePct),
+      physicalCompletionPct: Number(m.physicalCompletionPct),
       targetStartDate: m.targetStartDate ? new Date(m.targetStartDate).toISOString().split("T")[0] : "",
       targetCompletionDate: m.targetCompletionDate ? new Date(m.targetCompletionDate).toISOString().split("T")[0] : "",
       actualCompletionDate: m.actualCompletionDate ? new Date(m.actualCompletionDate).toISOString().split("T")[0] : null,
-      assignedContractor: m.assignedContractor || m.assigned_contractor || "",
-      financialAllocationLakhs: Number((Number(m.financialAllocation ?? m.financial_allocation ?? 0) / 100000).toFixed(2)),
+      assignedContractor: m.assignedContractor,
+      financialAllocationLakhs: Number((Number(m.financialAllocation) / 100000).toFixed(2)),
       status: m.status,
-      projectName: m.project?.projectName || m.project_name || "",
-      projectId: m.projectId || m.project_id || "",
+      projectName: m.project?.projectName || "",
+      projectId: m.projectId,
     }));
 
     return NextResponse.json({
@@ -122,6 +98,7 @@ export async function POST(request: NextRequest) {
       assignedContractor,
       financialAllocationLakhs,
     } = body;
+    const tenantId = auth.user.tenantId;
 
     if (!projectId || !milestoneCode || !executionPhase || !milestoneTitle || !targetStartDate || !targetCompletionDate || !assignedContractor) {
       return NextResponse.json({
@@ -132,26 +109,67 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "INCOMPLETE_MILESTONE_RECORD",
-          message: "Development, milestone reference, phase, title, schedule dates and contractor are required",
+          message: "Development project, milestone reference, execution phase, title, target dates, and contractor are required",
         },
         meta: null,
       }, { status: 400 });
     }
 
-    const inserted = await prisma.$queryRaw<any[]>`
-      INSERT INTO construction_wbs_milestones (
-        id, tenant_id, project_id, milestone_code, execution_phase, milestone_title,
-        phase_weightage_pct, physical_completion_pct, target_start_date, target_completion_date,
-        assigned_contractor, financial_allocation, status
-      ) VALUES (
-        gen_random_uuid(), ${ACTIVE_TENANT_ID}::uuid, ${projectId}::uuid, ${milestoneCode}, ${executionPhase}, ${milestoneTitle},
-        ${Number(phaseWeightagePct) || 0}, 0, ${new Date(targetStartDate)}, ${new Date(targetCompletionDate)},
-        ${assignedContractor}, ${(Number(financialAllocationLakhs) || 0) * LAKH_IN_RUPEES}, 'PENDING'
-      )
-      RETURNING *
-    `;
+    // Verify project exists in tenant
+    let project = null;
+    if (isUuid(projectId.trim())) {
+      project = await prisma.masterProject.findFirst({
+        where: { id: projectId.trim(), tenantId },
+      });
+    } else {
+      project = await prisma.masterProject.findFirst({
+        where: { tenantId, projectName: { equals: projectId.trim(), mode: "insensitive" } },
+      });
+    }
 
-    const created = inserted[0];
+    if (!project) {
+      return NextResponse.json({
+        success: false,
+        status_code: 404,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "PROJECT_NOT_FOUND",
+          message: "Selected project was not found in your organization",
+        },
+        meta: null,
+      }, { status: 404 });
+    }
+
+    const allocLakhs = Number(financialAllocationLakhs);
+    const allocRupees = !isNaN(allocLakhs) && allocLakhs > 0 ? Math.round(allocLakhs * 100000 * 100) / 100 : 0;
+    const weightage = Math.max(0, Math.min(100, Number(phaseWeightagePct) || 0));
+
+    const created = await prisma.constructionWbsMilestone.create({
+      data: {
+        tenantId,
+        projectId: project.id,
+        milestoneCode: milestoneCode.trim(),
+        executionPhase: executionPhase.trim(),
+        milestoneTitle: milestoneTitle.trim(),
+        phaseWeightagePct: weightage,
+        physicalCompletionPct: 0,
+        targetStartDate: new Date(targetStartDate),
+        targetCompletionDate: new Date(targetCompletionDate),
+        assignedContractor: assignedContractor.trim(),
+        financialAllocation: allocRupees,
+        status: "PENDING",
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            projectName: true,
+          },
+        },
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -160,11 +178,14 @@ export async function POST(request: NextRequest) {
       request_id: `req-${Date.now()}`,
       data: {
         id: created.id,
-        milestoneCode: created.milestone_code,
-        executionPhase: created.execution_phase,
-        milestoneTitle: created.milestone_title,
-        assignedContractor: created.assigned_contractor,
+        milestoneCode: created.milestoneCode,
+        executionPhase: created.executionPhase,
+        milestoneTitle: created.milestoneTitle,
+        assignedContractor: created.assignedContractor,
         status: created.status,
+        financialAllocationLakhs: Number((Number(created.financialAllocation) / 100000).toFixed(2)),
+        projectName: created.project.projectName,
+        projectId: created.projectId,
       },
       error: null,
       meta: null,
@@ -184,4 +205,5 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 

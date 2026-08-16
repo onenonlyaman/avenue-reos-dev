@@ -12,15 +12,9 @@ import { financeApi, LedgerEntry } from "@/services/financeApi";
 import { JournalPostingModal } from "./JournalPostingModal";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
 
-const COST_CENTERS = [
-  "All",
-  "Gangapur Rd Concrete Head",
-  "Indira Nagar Electricals",
-  "Pathardi Phata Statutory",
-];
-
 export function GeneralLedgerView() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [costCenters, setCostCenters] = useState<string[]>(["All"]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [costCenterFilter, setCostCenterFilter] = useState<string>("All");
   const [fiscalYear, setFiscalYear] = useState<string>("FY 2026-27");
@@ -28,9 +22,21 @@ export function GeneralLedgerView() {
   const [error, setError] = useState<string | null>(null);
 
   const [isPostingModalOpen, setIsPostingModalOpen] = useState<boolean>(false);
-
   const [isRecordFormOpen, setIsRecordFormOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
+
+  const loadCostCenters = async () => {
+    try {
+      const res = await fetch("/api/v1/finance/cost-centers");
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        const names = json.data.map((c: any) => c.formattedLabel || c.name || c.costCenterCode);
+        setCostCenters(["All", ...names]);
+      }
+    } catch {
+      // Fallback only if endpoint is unreachable
+    }
+  };
 
   const loadLedger = async () => {
     try {
@@ -50,12 +56,24 @@ export function GeneralLedgerView() {
   };
 
   useEffect(() => {
+    loadCostCenters();
+  }, []);
+
+  useEffect(() => {
     loadLedger();
   }, [costCenterFilter, fiscalYear]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     loadLedger();
+  };
+
+  const formatAmount = (val: number) => {
+    if (!val || val <= 0) return "—";
+    if (val >= 100000) {
+      return `₹${(val / 100000).toFixed(2)} L`;
+    }
+    return `₹${val.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
   };
 
   const handleEntryPosted = (newEntry: LedgerEntry, requiresHitl: boolean) => {
@@ -90,7 +108,7 @@ export function GeneralLedgerView() {
                 <SelectValue placeholder="Filter Cost Center" />
               </SelectTrigger>
               <SelectContent>
-                {COST_CENTERS.map((cc) => (
+                {costCenters.map((cc) => (
                   <SelectItem key={cc} value={cc}>
                     {cc === "All" ? "All Cost Centers" : cc}
                   </SelectItem>
@@ -187,10 +205,10 @@ export function GeneralLedgerView() {
                     {entry.costCenter}
                   </TableCell>
                   <TableCell className="text-xs py-3 text-right font-mono font-semibold text-foreground">
-                    {entry.debitAmount > 0 ? `₹${(entry.debitAmount / 100000).toFixed(2)} L` : "—"}
+                    {formatAmount(entry.debitAmount)}
                   </TableCell>
                   <TableCell className="text-xs py-3 text-right font-mono font-semibold text-foreground">
-                    {entry.creditAmount > 0 ? `₹${(entry.creditAmount / 100000).toFixed(2)} L` : "—"}
+                    {formatAmount(entry.creditAmount)}
                   </TableCell>
                   <TableCell className="text-xs py-3 text-muted-foreground">
                     {entry.postedBy}

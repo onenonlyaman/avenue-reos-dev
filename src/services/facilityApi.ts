@@ -29,6 +29,7 @@ export interface UnitHandover {
   targetHandoverDate: string;
   requiresHitl: boolean;
   status: "READY_FOR_HANDOVER" | "IN_DESNAGGING" | "HANDED_OVER" | "PENDING_APPROVAL";
+  rejectionReason?: string | null;
 }
 
 export interface CamInvoice {
@@ -49,11 +50,11 @@ export interface MaintenanceTicket {
   ticketReference: string;
   ticketSummary: string;
   propertyLocation: string;
-  category: "Electrical" | "Plumbing" | "Elevator" | "Civil" | "HVAC";
-  priority: "Critical" | "Moderate" | "Low";
-  slaStatus: "Within SLA" | "SLA Warning" | "SLA Breach";
+  category: "Electrical" | "Plumbing" | "Elevator" | "Civil" | "HVAC" | string;
+  priority: "Critical" | "Moderate" | "Low" | string;
+  slaStatus: "Within SLA" | "SLA Warning" | "SLA Breach" | string;
   assignedContractor: string;
-  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "ESCALATED";
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "ESCALATED" | string;
   loggedDate: string;
 }
 
@@ -131,6 +132,13 @@ export const facilityApi = {
 
   async getTickets(): Promise<MaintenanceTicket[]> {
     return fetchEnvelope<MaintenanceTicket[]>(`${API_BASE}/tickets`);
+  },
+
+  async updateTicketStatus(id: string, status: string, slaStatus?: string): Promise<{ success: boolean; id: string }> {
+    return fetchEnvelope<{ success: boolean; id: string }>(`${API_BASE}/tickets`, {
+      method: "PATCH",
+      body: JSON.stringify({ id, status, ...(slaStatus ? { slaStatus } : {}) }),
+    });
   },
 
   async getAssets(): Promise<FacilityAsset[]> {

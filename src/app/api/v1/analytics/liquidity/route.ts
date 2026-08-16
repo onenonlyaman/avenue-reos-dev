@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { prisma } from "@/lib/db";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
@@ -8,38 +7,49 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const model = (prisma as any).analyticsLiquidity;
-    let records: any[] = [];
+    const tenantId = auth.user.tenantId;
 
-    if (model?.findMany) {
-      records = await model.findMany({
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM analytics_liquidity WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
-        `;
-        records = raw || [];
-      } catch {
-        records = [];
-      }
-    }
+    const records = await prisma.$queryRaw<any[]>`
+      SELECT 
+        id,
+        tenant_id,
+        operating_period,
+        customer_inflows_lakhs,
+        vendor_outflows_lakhs,
+        debt_service_lakhs,
+        net_operating_cashflow_lakhs,
+        dscr_ratio,
+        solvency_status,
+        created_at,
+        updated_at
+      FROM analytics_liquidity
+      WHERE tenant_id = ${tenantId}::uuid
+      ORDER BY created_at DESC
+    `;
 
-    const mapped = records.map((r: any) => {
-      const inflows = Number(r.customerInflowsLakhs ?? r.customer_inflows_lakhs ?? 0);
-      const outflows = Number(r.vendorOutflowsLakhs ?? r.vendor_outflows_lakhs ?? 0);
-      const debt = Number(r.debtServiceLakhs ?? r.debt_service_lakhs ?? 1);
+    const mapped = (records || []).map((r: any) => {
+      const inflows = Number(r.customer_inflows_lakhs ?? r.customerInflowsLakhs ?? 0);
+      const outflows = Number(r.vendor_outflows_lakhs ?? r.vendorOutflowsLakhs ?? 0);
+      const debt = Number(r.debt_service_lakhs ?? r.debtServiceLakhs ?? 0);
       const netCash = inflows - outflows;
-      const dscr = debt > 0 ? Number((netCash / debt).toFixed(2)) : 2.5;
+
+      let dscr: number;
+      if (debt > 0) {
+        dscr = Number((netCash / debt).toFixed(2));
+      } else {
+        dscr = netCash >= 0 ? 99.9 : 0.0;
+      }
 
       let status: "Healthy Solvency" | "Debt Caution" | "Liquidity Risk" = "Healthy Solvency";
-      if (dscr < 1.15) status = "Liquidity Risk";
-      else if (dscr < 1.5) status = "Debt Caution";
+      if (netCash < 0 || (debt > 0 && dscr < 1.15)) {
+        status = "Liquidity Risk";
+      } else if (debt > 0 && dscr < 1.5) {
+        status = "Debt Caution";
+      }
 
       return {
         id: r.id,
-        operatingPeriod: r.operatingPeriod || r.operating_period || "",
+        operatingPeriod: r.operating_period || r.operatingPeriod || "",
         customerInflowsLakhs: inflows,
         vendorOutflowsLakhs: outflows,
         debtServiceLakhs: debt,
@@ -81,80 +91,67 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { operatingPeriod, customerInflowsLakhs, vendorOutflowsLakhs, debtServiceLakhs } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const tenantId = auth.user.tenantId;
 
-    if (!operatingPeriod) {
+    if (!operatingPeriod || typeof operatingPeriod !== "string" || operatingPeriod.trim().length === 0) {
       return NextResponse.json({
         success: false,
         status_code: 400,
         timestamp: new Date().toISOString(),
         request_id: `req-${Date.now()}`,
         data: null,
-        error: { code: "MISSING_FIELDS", message: "Operating period is required." },
+        error: { code: "MISSING_FIELDS", message: "Operating period description is required." },
         meta: null,
       }, { status: 400 });
     }
 
-    const inflows = Number(customerInflowsLakhs || 0);
-    const outflows = Number(vendorOutflowsLakhs || 0);
-    const debt = Number(debtServiceLakhs || 1);
+    const inflows = Math.max(0, Number(customerInflowsLakhs ?? 0));
+    const outflows = Math.max(0, Number(vendorOutflowsLakhs ?? 0));
+    const debt = Math.max(0, Number(debtServiceLakhs ?? 0));
     const netCash = inflows - outflows;
-    const dscr = debt > 0 ? Number((netCash / debt).toFixed(2)) : 2.5;
+
+    let dscr: number;
+    if (debt > 0) {
+      dscr = Number((netCash / debt).toFixed(2));
+    } else {
+      dscr = netCash >= 0 ? 99.9 : 0.0;
+    }
 
     let status: "Healthy Solvency" | "Debt Caution" | "Liquidity Risk" = "Healthy Solvency";
-    if (dscr < 1.15) status = "Liquidity Risk";
-    else if (dscr < 1.5) status = "Debt Caution";
-
-    const model = (prisma as any).analyticsLiquidity;
-    let created: any = null;
-
-    if (model?.create) {
-      created = await model.create({
-        data: {
-          tenantId,
-          operatingPeriod,
-          customerInflowsLakhs: inflows,
-          vendorOutflowsLakhs: outflows,
-          debtServiceLakhs: debt,
-          netOperatingCashflowLakhs: netCash,
-          dscrRatio: dscr,
-          solvencyStatus: status,
-        },
-      });
-    } else {
-      try {
-        await runtimeDdl("table:analytics_liquidity", () => prisma.$executeRaw`
-          CREATE TABLE IF NOT EXISTS analytics_liquidity (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL,
-            operating_period VARCHAR(50) NOT NULL,
-            customer_inflows_lakhs DECIMAL(15,2) NOT NULL,
-            vendor_outflows_lakhs DECIMAL(15,2) NOT NULL,
-            debt_service_lakhs DECIMAL(15,2) NOT NULL,
-            net_operating_cashflow_lakhs DECIMAL(15,2) NOT NULL,
-            dscr_ratio DECIMAL(5,2) NOT NULL,
-            solvency_status VARCHAR(50) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `);
-        const inserted = await prisma.$queryRaw<any[]>`
-          INSERT INTO analytics_liquidity (
-            tenant_id, operating_period, customer_inflows_lakhs,
-            vendor_outflows_lakhs, debt_service_lakhs, net_operating_cashflow_lakhs,
-            dscr_ratio, solvency_status
-          ) VALUES (
-            ${tenantId}::uuid, ${operatingPeriod}, ${inflows},
-            ${outflows}, ${debt}, ${netCash},
-            ${dscr}, ${status}
-          )
-          RETURNING *
-        `;
-        created = inserted[0];
-      } catch (err: unknown) {
-        throw new Error(safeErrorMessage(err, "Cash flow entry could not be saved"));
-      }
+    if (netCash < 0 || (debt > 0 && dscr < 1.15)) {
+      status = "Liquidity Risk";
+    } else if (debt > 0 && dscr < 1.5) {
+      status = "Debt Caution";
     }
+
+    const inserted = await prisma.$queryRaw<any[]>`
+      INSERT INTO analytics_liquidity (
+        tenant_id,
+        operating_period,
+        customer_inflows_lakhs,
+        vendor_outflows_lakhs,
+        debt_service_lakhs,
+        net_operating_cashflow_lakhs,
+        dscr_ratio,
+        solvency_status,
+        created_at,
+        updated_at
+      ) VALUES (
+        ${tenantId}::uuid,
+        ${operatingPeriod.trim()},
+        ${inflows},
+        ${outflows},
+        ${debt},
+        ${netCash},
+        ${dscr},
+        ${status},
+        NOW(),
+        NOW()
+      )
+      RETURNING *
+    `;
+
+    const created = inserted[0];
 
     return NextResponse.json({
       success: true,
@@ -163,7 +160,7 @@ export async function POST(request: NextRequest) {
       request_id: `req-${Date.now()}`,
       data: {
         id: created.id,
-        operatingPeriod: created.operatingPeriod || created.operating_period,
+        operatingPeriod: created.operating_period,
         customerInflowsLakhs: inflows,
         vendorOutflowsLakhs: outflows,
         debtServiceLakhs: debt,
@@ -189,6 +186,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-

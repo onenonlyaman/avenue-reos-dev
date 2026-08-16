@@ -9,36 +9,61 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { id, reason } = body;
+    const tenantId = auth.user.tenantId;
 
-    if (!id) {
+    if (!id || typeof id !== "string") {
       return NextResponse.json({
         success: false,
         status_code: 400,
         timestamp: new Date().toISOString(),
         request_id: `req-${Date.now()}`,
         data: null,
-        error: { code: "INVALID_ID", message: "Bill ID is required" },
+        error: { code: "INVALID_ID", message: "A valid bill ID is required" },
         meta: null,
       }, { status: 400 });
     }
 
-    const rejectionMsg = reason || "Rejected by Project Director during audit verification.";
-    const billModel = (prisma as any).contractorRaBill;
+    const rejectionMsg = (reason && typeof reason === "string" ? reason.trim() : "") || "Rejected during engineering audit verification.";
 
-    if (billModel?.update) {
-      await billModel.update({
-        where: { id },
-        data: {
-          status: "REJECTED",
-          rejectionReason: rejectionMsg,
-        },
+    const updated = await prisma.contractorRaBill.updateMany({
+      where: {
+        id,
+        tenantId,
+        status: "PENDING_APPROVAL",
+      },
+      data: {
+        status: "REJECTED",
+        rejectionReason: rejectionMsg,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (updated.count === 0) {
+      const existing = await prisma.contractorRaBill.findFirst({
+        where: { id, tenantId },
       });
-    } else {
-      await prisma.$executeRaw`
-        UPDATE contractor_ra_bills
-        SET status = 'REJECTED', rejection_reason = ${rejectionMsg}, updated_at = NOW()
-        WHERE id = ${id}::uuid
-      `;
+
+      if (!existing) {
+        return NextResponse.json({
+          success: false,
+          status_code: 404,
+          timestamp: new Date().toISOString(),
+          request_id: `req-${Date.now()}`,
+          data: null,
+          error: { code: "BILL_NOT_FOUND", message: "Contractor RA bill was not found in your organization." },
+          meta: null,
+        }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        success: false,
+        status_code: 409,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "ALREADY_PROCESSED", message: `Bill has already been processed with status: ${existing.status}` },
+        meta: null,
+      }, { status: 409 });
     }
 
     return NextResponse.json({
@@ -65,3 +90,4 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+

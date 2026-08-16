@@ -38,53 +38,41 @@ export default function FinancePage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="overview"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="overview" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Landmark className="h-3.5 w-3.5" />
             Financial Overview
           </TabsTrigger>
 
-          <TabsTrigger
-            value="ledger"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="ledger" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <BookOpen className="h-3.5 w-3.5" />
             General Ledger
           </TabsTrigger>
 
-          <TabsTrigger
-            value="budgets"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="budgets" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <PieChart className="h-3.5 w-3.5" />
             Cost Center Budgets
           </TabsTrigger>
 
-          <TabsTrigger
-            value="approvals"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="approvals" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
             HITL Disbursements
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview" className="outline-none space-y-4 pt-2">
+        <TabsContent value="overview" className="outline-none space-y-4">
           <FinancialOverviewView />
         </TabsContent>
 
-        <TabsContent value="ledger" className="outline-none space-y-4 pt-2">
+        <TabsContent value="ledger" className="outline-none space-y-4">
           <GeneralLedgerView />
         </TabsContent>
 
-        <TabsContent value="budgets" className="outline-none space-y-4 pt-2">
+        <TabsContent value="budgets" className="outline-none space-y-4">
           <BudgetManagementView />
         </TabsContent>
 
-        <TabsContent value="approvals" className="outline-none space-y-4 pt-2">
+        <TabsContent value="approvals" className="outline-none space-y-4">
           <HITLDisbursementsView onOpenApprovalDrawer={() => setIsApprovalDrawerOpen(true)} />
         </TabsContent>
       </Tabs>

@@ -66,10 +66,14 @@ export interface AiIntelligenceApprovalItem {
   title: string;
   category: "LEGAL_DEED" | "FRAUD_ALERT" | "COMMODITY_BUY_SIGNAL";
   targetReference: string;
+  targetId?: string | null;
   amount: number;
   justification: string;
   status: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
   requiresHitl: boolean;
+  rejectionReason?: string | null;
+  approvedBy?: string | null;
+  reviewedAt?: string | null;
 }
 
 const API_BASE = "/api/v1/ai-intelligence";
@@ -82,7 +86,12 @@ async function fetchEnvelope<T>(url: string, options?: RequestInit, allowNull: b
     ...(options?.headers || {}),
   };
 
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+    headers,
+  });
+
   const envelope: ApiResponseEnvelope<T> = await response.json();
 
   if (!envelope.success || envelope.error) {
@@ -102,7 +111,12 @@ export const aiIntelligenceApi = {
     return fetchEnvelope<DocumentLegalDraft[]>(`${API_BASE}/documents-legal`);
   },
 
-  async generateDocument(payload: Partial<DocumentLegalDraft>): Promise<DocumentLegalDraft> {
+  async generateDocument(payload: {
+    documentTitle: string;
+    documentType: "MOM Report" | "Legal Deed" | "Sale Agreement" | "Possession Affidavit";
+    targetProjectOrBuyer: string;
+    summaryText: string;
+  }): Promise<DocumentLegalDraft> {
     return fetchEnvelope<DocumentLegalDraft>(`${API_BASE}/documents-legal`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -113,12 +127,55 @@ export const aiIntelligenceApi = {
     return fetchEnvelope<SafetyConstructionInsight[]>(`${API_BASE}/construction-safety`);
   },
 
+  async createConstructionSafety(payload: {
+    cameraLocation: string;
+    incidentType: string;
+    riskSeverity?: string;
+    laborCount?: number;
+    projectedScheduleDelayDays?: number;
+  }): Promise<SafetyConstructionInsight> {
+    return fetchEnvelope<SafetyConstructionInsight>(`${API_BASE}/construction-safety`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getFinanceProcurement(): Promise<FinanceProcurementInsight[]> {
     return fetchEnvelope<FinanceProcurementInsight[]>(`${API_BASE}/finance-procurement`);
   },
 
+  async createFinanceProcurement(payload: {
+    itemName: string;
+    suggestedVendorName: string;
+    historicalQuoteAmount?: number;
+    recommendedAllocationAmount?: number;
+    savingsPercentage?: number;
+    cashBurnTrajectory?: string;
+  }): Promise<FinanceProcurementInsight> {
+    return fetchEnvelope<FinanceProcurementInsight>(`${API_BASE}/finance-procurement`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getRiskMarket(): Promise<RiskMarketInsight[]> {
     return fetchEnvelope<RiskMarketInsight[]>(`${API_BASE}/risk-market`);
+  },
+
+  async createRiskMarket(payload: {
+    commodityName: string;
+    currentMarketIndexPrice?: number;
+    priceTrendRecommendation?: string;
+    fraudAnomalyScore?: number;
+    customerSentimentScore?: number;
+    signalAmount?: number;
+    requiresHitl?: boolean;
+    summary: string;
+  }): Promise<RiskMarketInsight> {
+    return fetchEnvelope<RiskMarketInsight>(`${API_BASE}/risk-market`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   async getPendingApprovals(): Promise<AiIntelligenceApprovalItem[]> {
@@ -132,10 +189,10 @@ export const aiIntelligenceApi = {
     });
   },
 
-  async rejectApproval(id: string, reason: string): Promise<{ success: boolean; id: string }> {
+  async rejectApproval(id: string, reason?: string): Promise<{ success: boolean; id: string }> {
     return fetchEnvelope<{ success: boolean; id: string }>(`${API_BASE}/approvals/reject`, {
       method: "POST",
-      body: JSON.stringify({ id, reason }),
+      body: JSON.stringify({ id, reason: reason || "Rejected by Governance Director" }),
     });
   },
 };

@@ -4,12 +4,17 @@ import React, { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Warehouse, AlertCircle, Loader2 , Plus } from "lucide-react";
+import { Warehouse, AlertCircle, Loader2, Plus } from "lucide-react";
 import { procurementApi, InventoryItem } from "@/services/procurementApi";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
 import { Button } from "@/components/ui/button";
 
-export function InventoryWarehouseView() {
+interface InventoryWarehouseViewProps {
+  refreshKey?: number;
+  onRefreshNeeded?: () => void;
+}
+
+export function InventoryWarehouseView({ refreshKey, onRefreshNeeded }: InventoryWarehouseViewProps) {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
@@ -30,7 +35,12 @@ export function InventoryWarehouseView() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [refreshKey]);
+
+  const handleSaved = () => {
+    loadData();
+    if (onRefreshNeeded) onRefreshNeeded();
+  };
 
   return (
     <div className="space-y-6">
@@ -40,10 +50,10 @@ export function InventoryWarehouseView() {
             Warehouse Material Stock & Reorder Thresholds
           </h3>
         </div>
-      <Button size="sm" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsFormOpen(true)}>
-        <Plus className="h-3.5 w-3.5" />
-        Add Stock Item
-      </Button>
+        <Button size="sm" className="h-8 text-xs font-medium gap-1.5 shrink-0" onClick={() => setIsFormOpen(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          Add Stock Item
+        </Button>
       </div>
 
       {isLoading ? (
@@ -68,7 +78,7 @@ export function InventoryWarehouseView() {
           icon={Warehouse}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -130,7 +140,7 @@ export function InventoryWarehouseView() {
       <RecordFormModal
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
-        onSaved={loadData}
+        onSaved={handleSaved}
         title="Register Stock Item"
         endpoint="/api/v1/procurement/inventory"
         submitLabel="Register Item"

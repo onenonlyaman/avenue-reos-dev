@@ -1,30 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { ensureMcpSchema } from "@/lib/mcp/ensureMcpSchema";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = typeof auth === "object" && auth.user?.tenantId ? auth.user.tenantId : ACTIVE_TENANT_ID;
+
   try {
-    await runtimeDdl("table:mcp_approvals", () => prisma.$executeRaw`
-      CREATE TABLE IF NOT EXISTS mcp_approvals (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        tenant_id UUID NOT NULL,
-        agent_title VARCHAR(255) NOT NULL,
-        invoked_tool VARCHAR(100) NOT NULL,
-        target_module VARCHAR(100) NOT NULL,
-        parameters_summary TEXT NOT NULL,
-        justification TEXT NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'PENDING_APPROVAL',
-        requires_hitl BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
+    await ensureMcpSchema(tenantId);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM mcp_approvals WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND status = 'PENDING_APPROVAL' ORDER BY created_at DESC
+      SELECT id, agent_title, invoked_tool, target_module, parameters_summary, justification, status, requires_hitl, rejection_reason, created_at
+      FROM mcp_approvals
+      WHERE tenant_id = ${tenantId}::uuid AND status = 'PENDING_APPROVAL'
+      ORDER BY created_at DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -36,6 +29,8 @@ export async function GET(request: NextRequest) {
       justification: r.justification,
       status: r.status,
       requiresHitl: Boolean(r.requires_hitl),
+      rejectionReason: r.rejection_reason || null,
+      createdAt: r.created_at,
     }));
 
     return NextResponse.json({
@@ -62,4 +57,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-

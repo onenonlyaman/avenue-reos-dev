@@ -79,11 +79,27 @@ export function JournalPostingModal({
   }, [isOpen]);
 
   const numDebit = typeof debitAmount === "number" ? debitAmount : 0;
-  const requiresHitl = numDebit > 4000000;
+  const requiresHitl = numDebit > 1000000;
 
   const handleSubmit = async () => {
     if (!documentRef.trim()) {
       setError("Supporting Document Reference is required for audit trail validation.");
+      return;
+    }
+
+    if (!accountHead) {
+      setError("Please select a valid Chart of Accounts Head.");
+      return;
+    }
+
+    if (!costCenter) {
+      setError("Please select a valid Cost Center.");
+      return;
+    }
+
+    const numCredit = typeof creditAmount === "number" ? creditAmount : 0;
+    if (numDebit <= 0 && numCredit <= 0) {
+      setError("Please enter a positive debit or credit amount.");
       return;
     }
 
@@ -93,11 +109,11 @@ export function JournalPostingModal({
 
       const payload: JournalPostingPayload = {
         postingDate,
-        accountHead: accountHead || "1010 - HDFC Cash Account",
-        costCenter: costCenter || "CC-GNK-01 (Site Concrete)",
+        accountHead,
+        costCenter,
         debitAmount: numDebit,
-        creditAmount: typeof creditAmount === "number" ? creditAmount : 0,
-        documentRef,
+        creditAmount: numCredit,
+        documentRef: documentRef.trim(),
       };
 
       const result = await financeApi.postJournalEntry(payload);
@@ -228,7 +244,7 @@ export function JournalPostingModal({
               <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
               <div className="text-xs leading-relaxed">
                 <span className="font-semibold block mb-0.5">High-Value Posting Warning</span>
-                High-Value Posting Warning: Manual ledger entries exceeding ₹40 Lakhs mandate Human-In-The-Loop CFO sign-off prior to General Ledger posting.
+                Manual ledger entries exceeding ₹10 Lakhs mandate Human-In-The-Loop CFO sign-off prior to General Ledger posting.
               </div>
             </div>
           )}

@@ -11,6 +11,7 @@ import { usersApi } from "@/services/usersApi";
 export default function UsersPage() {
   const [isHitlDrawerOpen, setIsHitlDrawerOpen] = useState<boolean>(false);
   const [pendingHitlCount, setPendingHitlCount] = useState<number>(0);
+  const [refreshVersion, setRefreshVersion] = useState<number>(0);
 
   const checkPendingHitl = async () => {
     try {
@@ -22,8 +23,24 @@ export default function UsersPage() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    usersApi
+      .getPendingApprovals()
+      .then((pending) => {
+        if (isMounted) setPendingHitlCount(pending.length);
+      })
+      .catch(() => {
+        if (isMounted) setPendingHitlCount(0);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [refreshVersion]);
+
+  const handleRefreshAll = () => {
+    setRefreshVersion((prev) => prev + 1);
     checkPendingHitl();
-  }, []);
+  };
 
   return (
     <div className="space-y-6 pb-8">
@@ -36,25 +53,29 @@ export default function UsersPage() {
         <Button
           variant="outline"
           size="sm"
-          className="gap-2 text-xs font-semibold shrink-0 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100"
+          className="gap-2 text-xs font-semibold shrink-0 border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-300 hover:bg-amber-500/20"
           onClick={() => setIsHitlDrawerOpen(true)}
         >
-          <ShieldCheck className="h-4 w-4 text-amber-700" />
+          <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           <span>Role Approvals</span>
           {pendingHitlCount > 0 && (
-            <span className="ml-1 bg-amber-700 text-white rounded-full px-1.5 py-0.5 text-[10px] font-mono font-bold">
+            <span className="ml-1 bg-amber-600 text-white rounded-full px-1.5 py-0.5 text-[10px] font-mono font-bold">
               {pendingHitlCount}
             </span>
           )}
         </Button>
       </div>
 
-      <UserDirectoryView onOpenHitlDrawer={() => setIsHitlDrawerOpen(true)} />
+      <UserDirectoryView
+        onOpenHitlDrawer={() => setIsHitlDrawerOpen(true)}
+        refreshVersion={refreshVersion}
+        onRefreshPendingCount={checkPendingHitl}
+      />
 
       <UserApprovalDrawer
         isOpen={isHitlDrawerOpen}
         onClose={() => setIsHitlDrawerOpen(false)}
-        onRefresh={checkPendingHitl}
+        onRefresh={handleRefreshAll}
       />
     </div>
   );

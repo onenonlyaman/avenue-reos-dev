@@ -22,12 +22,25 @@ export async function GET(request: NextRequest) {
       )
     `);
 
-    const raw = await prisma.$queryRaw<any[]>`
+    interface ApprovalRow {
+      id: string;
+      tenant_id: string;
+      user_id: string | null;
+      target_user_name: string;
+      requested_role: string;
+      requested_financial_limit: number | string | null;
+      justification: string;
+      status: string;
+      requires_hitl: boolean;
+    }
+
+    const raw = await prisma.$queryRaw<ApprovalRow[]>`
       SELECT * FROM user_role_approvals WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND status = 'PENDING_APPROVAL' ORDER BY created_at DESC
     `;
 
-    const mapped = (raw || []).map((r: any) => ({
+    const mapped = (raw || []).map((r) => ({
       id: r.id,
+      userId: r.user_id || undefined,
       targetUserName: r.target_user_name,
       requestedRole: r.requested_role,
       requestedFinancialLimit: Number(r.requested_financial_limit || 0),

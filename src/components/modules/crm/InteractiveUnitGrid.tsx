@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { UnitDetail, UnitSpecSheet } from "./UnitSpecSheet";
 import { ProjectInventoryModal } from "./ProjectInventoryModal";
+import { ProjectUnitCreationModal } from "./ProjectUnitCreationModal";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
 import { Building, Layers, Info, Plus, Loader2 } from "lucide-react";
 
@@ -31,6 +32,7 @@ export function InteractiveUnitGrid({ onSelectUnitForQuotation }: InteractiveUni
   const [activeUnit, setActiveUnit] = useState<UnitDetail | null>(null);
   const [isSpecSheetOpen, setIsSpecSheetOpen] = useState<boolean>(false);
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState<boolean>(false);
+  const [isUnitCreationModalOpen, setIsUnitCreationModalOpen] = useState<boolean>(false);
 
   const loadProjects = async () => {
     try {
@@ -60,7 +62,7 @@ export function InteractiveUnitGrid({ onSelectUnitForQuotation }: InteractiveUni
       setIsLoading(true);
       const query = new URLSearchParams();
       if (projId) query.append("projectId", projId);
-      if (tower) query.append("towerName", tower);
+      if (tower && tower !== "all") query.append("towerName", tower);
 
       const res = await fetch(`/api/v1/units?${query.toString()}`);
       const envelope = await res.json();
@@ -145,12 +147,12 @@ export function InteractiveUnitGrid({ onSelectUnitForQuotation }: InteractiveUni
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Select value={selectedTower} onValueChange={(val) => val && setSelectedTower(val)}>
+            <Select value={selectedTower || "all"} onValueChange={(val) => val && setSelectedTower(val)}>
               <SelectTrigger className="h-9 text-xs w-full sm:w-44 truncate">
-                <span>{selectedTower || "All Towers"}</span>
+                <span>{selectedTower && selectedTower !== "all" ? selectedTower : "All Towers"}</span>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Towers</SelectItem>
+                <SelectItem value="all">All Towers</SelectItem>
                 {availableTowers.map((t) => (
                   <SelectItem key={t} value={t}>
                     {t}
@@ -184,10 +186,16 @@ export function InteractiveUnitGrid({ onSelectUnitForQuotation }: InteractiveUni
             </div>
           </div>
 
-          <Button size="sm" className="h-9 text-xs gap-1.5" onClick={() => setIsInventoryModalOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            Add Project / Matrix Blueprint
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" onClick={() => setIsUnitCreationModalOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Direct Unit / Project
+            </Button>
+            <Button size="sm" className="h-9 text-xs gap-1.5" onClick={() => setIsInventoryModalOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Add Project / Matrix Blueprint
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -279,6 +287,16 @@ export function InteractiveUnitGrid({ onSelectUnitForQuotation }: InteractiveUni
         isOpen={isInventoryModalOpen}
         onClose={() => setIsInventoryModalOpen(false)}
         existingProjects={projects.map((p) => ({ id: p.id, projectName: p.projectName, location: p.location }))}
+        onSuccess={() => {
+          loadProjects();
+          if (selectedProjectId) loadUnits(selectedProjectId, selectedTower);
+        }}
+      />
+
+      <ProjectUnitCreationModal
+        isOpen={isUnitCreationModalOpen}
+        onClose={() => setIsUnitCreationModalOpen(false)}
+        existingProjects={projects.map((p) => ({ id: p.id, projectName: p.projectName }))}
         onSuccess={() => {
           loadProjects();
           if (selectedProjectId) loadUnits(selectedProjectId, selectedTower);

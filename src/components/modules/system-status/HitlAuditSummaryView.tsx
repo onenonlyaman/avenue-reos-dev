@@ -1,21 +1,27 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { ShieldAlert, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { ShieldAlert, AlertCircle, Loader2, RefreshCw, ArrowUpRight } from "lucide-react";
 import { systemApi, HitlGateSummary } from "@/services/systemApi";
 
 export function HitlAuditSummaryView() {
   const [summary, setSummary] = useState<HitlGateSummary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  const loadData = async () => {
+  const loadData = async (isManual = false) => {
     try {
-      setIsLoading(true);
+      if (isManual) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
       setError(null);
       const data = await systemApi.getHitlSummary();
       setSummary(data);
@@ -23,6 +29,7 @@ export function HitlAuditSummaryView() {
       setError(err instanceof Error ? err.message : "Authorization audit summary could not be loaded");
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -43,9 +50,9 @@ export function HitlAuditSummaryView() {
     return (
       <CorporateEmptyState
         title="HITL Audit Summary Error"
-        description={error || "Governance approval queues. could not be completed"}
-        actionLabel="Retry"
-        onAction={loadData}
+        description={error || "Governance approval queues could not be verified."}
+        actionLabel="Retry Verification"
+        onAction={() => loadData(false)}
         icon={AlertCircle}
       />
     );
@@ -54,7 +61,7 @@ export function HitlAuditSummaryView() {
   const gates = [
     {
       module: "Finance ERP Workspace",
-      threshold: "Disbursements Exceeding ₹10 Lakhs",
+      threshold: "Disbursements Exceeding ₹10 Lakhs & High-Value Bookings",
       pendingCount: summary.financePendingCount,
       targetRoute: "/finance",
     },
@@ -97,11 +104,26 @@ export function HitlAuditSummaryView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Unified Human-in-the-Loop (HITL) Executive Governance Matrix
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time verification of threshold-triggered compliance queues across all operational registers.
+          </p>
         </div>
 
-        <div className="flex items-center gap-2 font-mono text-xs bg-amber-50 text-amber-950 px-3 py-1.5 rounded border border-amber-300">
-          <ShieldAlert className="h-4 w-4 text-amber-700 shrink-0" />
-          <span className="font-bold">{summary.totalPendingHitl} Total Pending Authorizations</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 font-mono text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300 px-3 py-1.5 rounded border border-amber-500/30">
+            <ShieldAlert className="h-4 w-4 text-amber-600 shrink-0" />
+            <span className="font-bold">{summary.totalPendingHitl} Total Pending Authorizations</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => loadData(true)}
+            disabled={isRefreshing}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
       </div>
 
@@ -113,7 +135,7 @@ export function HitlAuditSummaryView() {
               <TableHead className="text-xs font-semibold">HITL Safeguard Trigger Threshold</TableHead>
               <TableHead className="text-xs font-semibold text-center">Pending Approvals</TableHead>
               <TableHead className="text-xs font-semibold text-center">Governance Status</TableHead>
-              <TableHead className="text-xs font-semibold text-right">Action</TableHead>
+              <TableHead className="text-xs font-semibold text-right">Queue Navigation</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -122,7 +144,7 @@ export function HitlAuditSummaryView() {
                 <TableCell className="text-xs py-3 font-semibold text-foreground">
                   {g.module}
                 </TableCell>
-                <TableCell className="text-xs py-3 font-medium text-foreground">
+                <TableCell className="text-xs py-3 font-medium text-muted-foreground">
                   {g.threshold}
                 </TableCell>
                 <TableCell className="text-xs py-3 text-center font-mono font-extrabold text-primary text-sm">
@@ -130,24 +152,26 @@ export function HitlAuditSummaryView() {
                 </TableCell>
                 <TableCell className="text-xs py-3 text-center">
                   {g.pendingCount > 0 ? (
-                    <Badge variant="outline" className="text-[10px] font-bold bg-amber-100 text-amber-900 border-amber-300">
+                    <Badge variant="outline" className="text-[10px] font-bold bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-500/30">
                       Pending Authorization
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border-emerald-300">
+                    <Badge variant="outline" className="text-[10px] font-bold bg-emerald-500/10 text-emerald-800 dark:text-emerald-400 border-emerald-500/30">
                       Fully Cleared
                     </Badge>
                   )}
                 </TableCell>
                 <TableCell className="text-xs py-3 text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px] gap-1"
-                    onClick={() => (window.location.href = g.targetRoute)}
-                  >
-                    Open Drawer
-                  </Button>
+                  <Link href={g.targetRoute}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px] gap-1 hover:text-primary hover:border-primary/50"
+                    >
+                      <span>View Queue</span>
+                      <ArrowUpRight className="h-3 w-3" />
+                    </Button>
+                  </Link>
                 </TableCell>
               </TableRow>
             ))}

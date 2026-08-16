@@ -51,7 +51,7 @@ export default function RegisterPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
         <div className="w-full max-w-md bg-card border border-border rounded-xl shadow-xs p-6 text-center space-y-4">
-          <CheckCircle2 className="h-10 w-10 text-emerald-700 mx-auto" />
+          <CheckCircle2 className="h-10 w-10 text-emerald-600 dark:text-emerald-400 mx-auto" />
           <h2 className="text-lg font-bold text-foreground">Onboarding Request Submitted</h2>
           <p className="text-xs text-muted-foreground">
             Your request has been routed to the HR & Governance Director approval queue. You will receive an activation email once authorized.
@@ -80,93 +80,125 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 text-xs bg-red-50 text-red-900 border border-red-200 rounded">
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20 rounded-md font-medium"
+            >
               {error}
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Full Legal Name</Label>
-            <Input
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              placeholder="e.g. Aman Bele"
-              className="h-9 text-xs"
-            />
-          </div>
+          <fieldset disabled={isLoading} className="space-y-4 disabled:opacity-80">
+            <div className="space-y-1.5">
+              <Label htmlFor="register-name" className="text-xs font-semibold">
+                Full Legal Name
+              </Label>
+              <Input
+                id="register-name"
+                autoComplete="name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. Aman Bele"
+                className="h-9 text-xs"
+                required
+              />
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Official Email Address</Label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@avenuebuilders.in"
-              className="h-9 text-xs"
-            />
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="register-email" className="text-xs font-semibold">
+                Official Email Address
+              </Label>
+              <Input
+                id="register-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@avenuebuilders.in"
+                className="h-9 text-xs"
+                required
+              />
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Password</Label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="h-9 text-xs font-mono"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              At least 12 characters, with upper and lower case, a digit and a symbol.
-            </p>
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="register-password" className="text-xs font-semibold">
+                Password
+              </Label>
+              <Input
+                id="register-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="h-9 text-xs font-mono"
+                required
+              />
+              <p className="text-[11px] text-muted-foreground">
+                At least 12 characters, with upper and lower case, a digit and a symbol.
+              </p>
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Confirm Password</Label>
-            <Input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="h-9 text-xs font-mono"
-            />
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="register-confirm-password" className="text-xs font-semibold">
+                Confirm Password
+              </Label>
+              <Input
+                id="register-confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="h-9 text-xs font-mono"
+                required
+              />
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Department</Label>
-            <Select value={department} onValueChange={(val) => val && setDepartment(val)}>
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Engineering & Site Operations">Engineering & Site Operations</SelectItem>
-                <SelectItem value="Finance & Accounts">Finance & Accounts</SelectItem>
-                <SelectItem value="Legal & Land Acquisition">Legal & Land Acquisition</SelectItem>
-                <SelectItem value="Procurement & Materials">Procurement & Materials</SelectItem>
-                <SelectItem value="CRM & Sales Operations">CRM & Sales Operations</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="register-department" className="text-xs font-semibold">
+                Department
+              </Label>
+              <Select value={department} onValueChange={(val) => val && setDepartment(val)}>
+                <SelectTrigger id="register-department" className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Engineering & Site Operations">Engineering & Site Operations</SelectItem>
+                  <SelectItem value="Finance & Accounts">Finance & Accounts</SelectItem>
+                  <SelectItem value="Legal & Land Acquisition">Legal & Land Acquisition</SelectItem>
+                  <SelectItem value="Procurement & Materials">Procurement & Materials</SelectItem>
+                  <SelectItem value="CRM & Sales Operations">CRM & Sales Operations</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">Position Designation</Label>
-            <Input
-              value={designation}
-              onChange={(e) => setDesignation(e.target.value)}
-              placeholder="e.g. Lead Site Engineer"
-              className="h-9 text-xs"
-            />
-          </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="register-designation" className="text-xs font-semibold">
+                Position Designation
+              </Label>
+              <Input
+                id="register-designation"
+                value={designation}
+                onChange={(e) => setDesignation(e.target.value)}
+                placeholder="e.g. Lead Site Engineer"
+                className="h-9 text-xs"
+                required
+              />
+            </div>
 
-          <Button type="submit" className="w-full h-9 text-xs font-semibold" disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Submitting Request...
-              </>
-            ) : (
-              "Submit Onboarding Request"
-            )}
-          </Button>
+            <Button type="submit" className="w-full h-9 text-xs font-semibold" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting Request...
+                </>
+              ) : (
+                "Submit Onboarding Request"
+              )}
+            </Button>
+          </fieldset>
         </form>
 
         <div className="pt-4 border-t border-border text-center text-xs text-muted-foreground">
@@ -179,3 +211,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+

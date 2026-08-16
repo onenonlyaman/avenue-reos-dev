@@ -38,8 +38,11 @@ export async function RouteAuthorisation({ children }: { children: React.ReactNo
   }
 
   if (!isRouteAllowedForRole(session.user.role, pathname)) {
-    // Send the account to the module it does own rather than rendering a dead end.
-    redirect(getHomeRouteForRole(session.user.role));
+    const homeRoute = getHomeRouteForRole(session.user.role);
+    // Prevent redirect loops: only redirect if target is different and verified permitted
+    if (pathname !== homeRoute && isRouteAllowedForRole(session.user.role, homeRoute)) {
+      redirect(homeRoute);
+    }
   }
 
   return <>{children}</>;

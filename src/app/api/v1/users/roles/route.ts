@@ -10,10 +10,22 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { userName, targetRole, financialLimit } = body;
+    const { userId, userName, targetRole, financialLimit } = body;
     const tenantId = ACTIVE_TENANT_ID;
 
-    const isElevatedRole = targetRole === "Governance Director";
+    if (!targetRole) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "MISSING_ROLE", message: "Target role is required." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const isElevatedRole = targetRole === "Governance Director" || targetRole === "Super Admin";
     const isElevatedLimit = Number(financialLimit || 0) > HITL_ELEVATED_AUTHORITY_LIMIT;
     const requiresHitl = isElevatedRole || isElevatedLimit;
 
@@ -22,6 +34,7 @@ export async function POST(request: NextRequest) {
         CREATE TABLE IF NOT EXISTS user_role_approvals (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           tenant_id UUID NOT NULL,
+          user_id UUID,
           target_user_name VARCHAR(255) NOT NULL,
           requested_role VARCHAR(100) NOT NULL,
           requested_financial_limit NUMERIC(15,2) NOT NULL DEFAULT 0,
@@ -32,11 +45,17 @@ export async function POST(request: NextRequest) {
         )
       `);
 
+      try {
+        await prisma.$executeRaw`ALTER TABLE user_role_approvals ADD COLUMN IF NOT EXISTS user_id UUID`;
+      } catch {
+        // column already exists
+      }
+
       await prisma.$executeRaw`
         INSERT INTO user_role_approvals (
-          tenant_id, target_user_name, requested_role, requested_financial_limit, justification, status, requires_hitl
+          tenant_id, user_id, target_user_name, requested_role, requested_financial_limit, justification, status, requires_hitl
         ) VALUES (
-          ${tenantId}::uuid, ${userName || "Employee User"}, ${targetRole}, ${financialLimit || 0},
+          ${tenantId}::uuid, ${userId ? userId : null}::uuid, ${userName || "Employee User"}, ${targetRole}, ${financialLimit || 0},
           'Elevating role to Governance Director or expanding financial authority > ₹10 Lakhs requires executive approval',
           'PENDING_APPROVAL', true
         )
@@ -53,11 +72,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    await prisma.$executeRaw`
-      UPDATE system_users
-      SET role = ${targetRole}
-      WHERE full_name = ${userName}
-    `;
+    if (userId) {
+      await prisma.$executeRaw`
+        UPDATE system_users
+        SET role = ${targetRole}
+        WHERE id = ${userId}::uuid AND tenant_id = ${tenantId}::uuid
+      `;
+    } else {
+      await prisma.$executeRaw`
+        UPDATE system_users
+        SET role = ${targetRole}
+        WHERE full_name = ${userName} AND tenant_id = ${tenantId}::uuid
+      `;
+    }
 
     return NextResponse.json({
       success: true,

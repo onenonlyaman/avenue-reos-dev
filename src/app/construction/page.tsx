@@ -21,6 +21,7 @@ export default function ConstructionPage() {
   ]);
   const [selectedProject, setSelectedProject] = useState<string>("All Nashik Developments");
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+  const [billsRefreshKey, setBillsRefreshKey] = useState<number>(0);
   const [isApprovalDrawerOpen, setIsApprovalDrawerOpen] = useState<boolean>(false);
   const [isCreateSiteModalOpen, setIsCreateSiteModalOpen] = useState<boolean>(false);
 
@@ -45,6 +46,11 @@ export default function ConstructionPage() {
     } catch {
       setPendingApprovalsCount(0);
     }
+  };
+
+  const handleBillProcessed = () => {
+    loadPendingApprovals();
+    setBillsRefreshKey((k) => k + 1);
   };
 
   useEffect(() => {
@@ -85,41 +91,29 @@ export default function ConstructionPage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="wbs"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="wbs" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <HardHat className="h-3.5 w-3.5" />
             Site Progress & WBS
           </TabsTrigger>
 
-          <TabsTrigger
-            value="dpr"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="dpr" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Calendar className="h-3.5 w-3.5" />
             Daily Progress Reports
           </TabsTrigger>
 
-          <TabsTrigger
-            value="ra-bills"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="ra-bills" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <FileText className="h-3.5 w-3.5" />
             Contractor RA Bills
           </TabsTrigger>
 
-          <TabsTrigger
-            value="inspections"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="inspections" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <ShieldCheck className="h-3.5 w-3.5" />
             Quality & Safety Audits
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="wbs" className="outline-none space-y-4 pt-2">
+        <TabsContent value="wbs" className="outline-none space-y-4">
           <WbsMilestonesView
             projects={projects}
             selectedProject={selectedProject}
@@ -127,7 +121,7 @@ export default function ConstructionPage() {
           />
         </TabsContent>
 
-        <TabsContent value="dpr" className="outline-none space-y-4 pt-2">
+        <TabsContent value="dpr" className="outline-none space-y-4">
           <DailyProgressView
             projects={projects}
             selectedProject={selectedProject}
@@ -135,16 +129,17 @@ export default function ConstructionPage() {
           />
         </TabsContent>
 
-        <TabsContent value="ra-bills" className="outline-none space-y-4 pt-2">
+        <TabsContent value="ra-bills" className="outline-none space-y-4">
           <ContractorBillsView
             projects={projects}
             selectedProject={selectedProject}
             onProjectChange={setSelectedProject}
             onOpenApprovalDrawer={() => setIsApprovalDrawerOpen(true)}
+            refreshTrigger={billsRefreshKey}
           />
         </TabsContent>
 
-        <TabsContent value="inspections" className="outline-none space-y-4 pt-2">
+        <TabsContent value="inspections" className="outline-none space-y-4">
           <QualitySafetyView
             projects={projects}
             selectedProject={selectedProject}
@@ -156,7 +151,7 @@ export default function ConstructionPage() {
       <ConstructionApprovalDrawer
         isOpen={isApprovalDrawerOpen}
         onClose={() => setIsApprovalDrawerOpen(false)}
-        onBillProcessed={loadPendingApprovals}
+        onBillProcessed={handleBillProcessed}
       />
 
       <CreateSiteModal
@@ -167,4 +162,5 @@ export default function ConstructionPage() {
     </div>
   );
 }
+
 

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
@@ -8,6 +7,8 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const tenantId = auth.user.tenantId;
+
     await runtimeDdl("table:hr_employees", () => prisma.$executeRaw`
       CREATE TABLE IF NOT EXISTS hr_employees (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -19,15 +20,31 @@ export async function GET(request: NextRequest) {
         workforce_type VARCHAR(50) NOT NULL DEFAULT 'Permanent',
         status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
         joining_date VARCHAR(50) NOT NULL,
-        corporate_email VARCHAR(255) NOT NULL,
-        contact_number VARCHAR(50) NOT NULL,
+        corporate_email VARCHAR(255) NOT NULL DEFAULT '',
+        contact_number VARCHAR(50) NOT NULL DEFAULT '',
+        basic_salary NUMERIC(15,2) NOT NULL DEFAULT 45000,
+        allowances NUMERIC(15,2) NOT NULL DEFAULT 15000,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 
+    await runtimeDdl("alter:hr_employees_salaries", () => prisma.$executeRaw`
+      DO $$
+      BEGIN
+        BEGIN
+          ALTER TABLE hr_employees ADD COLUMN basic_salary NUMERIC(15,2) NOT NULL DEFAULT 45000;
+        EXCEPTION WHEN duplicate_column THEN NULL; END;
+        BEGIN
+          ALTER TABLE hr_employees ADD COLUMN allowances NUMERIC(15,2) NOT NULL DEFAULT 15000;
+        EXCEPTION WHEN duplicate_column THEN NULL; END;
+      END $$;
+    `);
+
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM hr_employees WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
+      SELECT * FROM hr_employees 
+      WHERE tenant_id = ${tenantId}::uuid 
+      ORDER BY created_at DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -39,8 +56,10 @@ export async function GET(request: NextRequest) {
       workforceType: r.workforce_type,
       status: r.status,
       joiningDate: r.joining_date,
-      corporateEmail: r.corporate_email,
-      contactNumber: r.contact_number,
+      corporateEmail: r.corporate_email || "",
+      contactNumber: r.contact_number || "",
+      basicSalary: Number(r.basic_salary || 0),
+      allowances: Number(r.allowances || 0),
     }));
 
     return NextResponse.json({
@@ -73,9 +92,20 @@ export async function POST(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
+    const tenantId = auth.user.tenantId;
     const body = await request.json();
-    const { fullName, designation, department, siteLocation, workforceType, corporateEmail, contactNumber } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const {
+      fullName,
+      designation,
+      department,
+      siteLocation,
+      workforceType,
+      corporateEmail,
+      contactNumber,
+      basicSalary,
+      allowances,
+      joiningDate,
+    } = body;
 
     if (!fullName || !designation || !department) {
       return NextResponse.json({
@@ -100,20 +130,28 @@ export async function POST(request: NextRequest) {
         workforce_type VARCHAR(50) NOT NULL DEFAULT 'Permanent',
         status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
         joining_date VARCHAR(50) NOT NULL,
-        corporate_email VARCHAR(255) NOT NULL,
-        contact_number VARCHAR(50) NOT NULL,
+        corporate_email VARCHAR(255) NOT NULL DEFAULT '',
+        contact_number VARCHAR(50) NOT NULL DEFAULT '',
+        basic_salary NUMERIC(15,2) NOT NULL DEFAULT 45000,
+        allowances NUMERIC(15,2) NOT NULL DEFAULT 15000,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 
+    const finalJoiningDate = joiningDate || new Date().toISOString().split("T")[0];
+    const finalBasic = Number(basicSalary) > 0 ? Number(basicSalary) : 45000;
+    const finalAllowances = Number(allowances) >= 0 ? Number(allowances) : 15000;
+
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO hr_employees (
         tenant_id, full_name, designation, department, site_location,
-        workforce_type, status, joining_date, corporate_email, contact_number
+        workforce_type, status, joining_date, corporate_email, contact_number,
+        basic_salary, allowances
       ) VALUES (
-        ${tenantId}::uuid, ${fullName}, ${designation}, ${department}, ${siteLocation || "Gangapur Road Site"},
-        ${workforceType || "Permanent"}, 'ACTIVE', ${new Date().toISOString().split("T")[0]}, ${corporateEmail || ""}, ${contactNumber || ""}
+        ${tenantId}::uuid, ${fullName}, ${designation}, ${department}, ${siteLocation || "Nashik Corporate Headquarters"},
+        ${workforceType || "Permanent"}, 'ACTIVE', ${finalJoiningDate}, ${corporateEmail || ""}, ${contactNumber || ""},
+        ${finalBasic}, ${finalAllowances}
       )
       RETURNING *
     `;
@@ -136,6 +174,8 @@ export async function POST(request: NextRequest) {
         joiningDate: created.joining_date,
         corporateEmail: created.corporate_email,
         contactNumber: created.contact_number,
+        basicSalary: Number(created.basic_salary),
+        allowances: Number(created.allowances),
       },
       error: null,
       meta: null,
@@ -155,5 +195,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-

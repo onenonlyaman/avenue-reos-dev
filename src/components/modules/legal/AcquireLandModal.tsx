@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,19 +21,31 @@ export function AcquireLandModal({
   onClose,
   onParcelCreated,
 }: AcquireLandModalProps) {
-  const [parcelDescription, setParcelDescription] = useState<string>("Gangapur Survey No. 104/A Parcel");
-  const [locationZone, setLocationZone] = useState<string>("Gangapur Road, Nashik");
-  const [plotAreaAcres, setPlotAreaAcres] = useState<number | "">(2.5);
-  const [applicableFsi, setApplicableFsi] = useState<number | "">(1.8);
-  const [baseLandValueAmount, setBaseLandValueAmount] = useState<number | "">(4500000);
+  const [parcelDescription, setParcelDescription] = useState<string>("");
+  const [locationZone, setLocationZone] = useState<string>("");
+  const [plotAreaAcres, setPlotAreaAcres] = useState<number | "">("");
+  const [applicableFsi, setApplicableFsi] = useState<number | "">(1.5);
+  const [baseLandValueAmount, setBaseLandValueAmount] = useState<number | "">("");
   const [titleStatus, setTitleStatus] = useState<"Clear Title" | "Title Under Verification" | "Litigated / Encumbered">("Clear Title");
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const acresVal = typeof plotAreaAcres === "number" ? plotAreaAcres : 0;
-  const fsiVal = typeof applicableFsi === "number" ? applicableFsi : 0;
-  const baseVal = typeof baseLandValueAmount === "number" ? baseLandValueAmount : 0;
+  useEffect(() => {
+    if (isOpen) {
+      setParcelDescription("");
+      setLocationZone("");
+      setPlotAreaAcres("");
+      setApplicableFsi(1.5);
+      setBaseLandValueAmount("");
+      setTitleStatus("Clear Title");
+      setError(null);
+    }
+  }, [isOpen]);
+
+  const acresVal = typeof plotAreaAcres === "number" && plotAreaAcres > 0 ? plotAreaAcres : 0;
+  const fsiVal = typeof applicableFsi === "number" && applicableFsi > 0 ? applicableFsi : 1.5;
+  const baseVal = typeof baseLandValueAmount === "number" && baseLandValueAmount > 0 ? baseLandValueAmount : 0;
 
   const plotSqft = acresVal * 43560;
   const constructibleSqft = plotSqft * fsiVal;
@@ -49,14 +61,24 @@ export function AcquireLandModal({
       setIsSubmitting(true);
       setError(null);
 
-      if (!parcelDescription) throw new Error("Enter land parcel description.");
-      if (!locationZone) throw new Error("Enter location zone.");
-      if (!plotAreaAcres || plotAreaAcres <= 0) throw new Error("Enter valid plot area in acres.");
-      if (!baseLandValueAmount || baseLandValueAmount <= 0) throw new Error("Enter valid base land valuation.");
+      const desc = parcelDescription.trim();
+      const zone = locationZone.trim();
+
+      if (!desc) throw new Error("Enter land parcel description.");
+      if (!zone) throw new Error("Enter location zone.");
+      if (typeof plotAreaAcres !== "number" || plotAreaAcres <= 0) {
+        throw new Error("Enter a valid plot area in acres (must be greater than zero).");
+      }
+      if (typeof applicableFsi !== "number" || applicableFsi <= 0) {
+        throw new Error("Enter a valid applicable FSI ratio.");
+      }
+      if (typeof baseLandValueAmount !== "number" || baseLandValueAmount <= 0) {
+        throw new Error("Enter a valid base land valuation in Rupees.");
+      }
 
       const payload: AcquireLandPayload = {
-        parcelDescription,
-        locationZone,
+        parcelDescription: desc,
+        locationZone: zone,
         plotAreaAcres: acresVal,
         applicableFsi: fsiVal,
         baseLandValueAmount: baseVal,
@@ -90,7 +112,7 @@ export function AcquireLandModal({
             Record Land Acquisition Proposal
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Calculate gross capital outlay, statutory stamp duty, and NMC FSI constructible floor area yield.
+            Calculate gross capital outlay, statutory stamp duty (7%), registration (1%), and NMC FSI constructible floor area yield.
           </DialogDescription>
         </DialogHeader>
 
@@ -129,7 +151,8 @@ export function AcquireLandModal({
               <Input
                 type="number"
                 step="0.1"
-                min="0.1"
+                min="0.01"
+                placeholder="e.g. 2.5"
                 value={plotAreaAcres}
                 onChange={(e) => setPlotAreaAcres(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono font-bold"
@@ -141,7 +164,8 @@ export function AcquireLandModal({
               <Input
                 type="number"
                 step="0.1"
-                min="0.5"
+                min="0.1"
+                placeholder="e.g. 1.8"
                 value={applicableFsi}
                 onChange={(e) => setApplicableFsi(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono font-bold"
@@ -153,7 +177,8 @@ export function AcquireLandModal({
               <Input
                 type="number"
                 step="100000"
-                min="0"
+                min="10000"
+                placeholder="e.g. 4500000"
                 value={baseLandValueAmount}
                 onChange={(e) => setBaseLandValueAmount(e.target.value ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono font-bold"
@@ -189,11 +214,11 @@ export function AcquireLandModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Statutory Stamp Duty (7%)</span>
-                <span className="font-semibold text-foreground">₹{stampVal.toLocaleString("en-IN")}</span>
+                <span className="font-semibold text-foreground">₹{Math.round(stampVal).toLocaleString("en-IN")}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Registration Charge (1%)</span>
-                <span className="font-semibold text-foreground">₹{regVal.toLocaleString("en-IN")}</span>
+                <span className="font-semibold text-foreground">₹{Math.round(regVal).toLocaleString("en-IN")}</span>
               </div>
               <div className="border-t border-border pt-1.5 flex justify-between font-bold text-xs text-foreground">
                 <span>Gross Acquisition Outlay</span>

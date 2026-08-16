@@ -53,53 +53,41 @@ export default function FacilityPage() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-        <TabsList className="w-full h-auto flex flex-wrap border-b border-border bg-transparent p-0 gap-1">
-          <TabsTrigger
-            value="handover"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+        <TabsList className="bg-muted/50 p-1 border border-border rounded-lg h-10 w-full sm:w-auto flex overflow-x-auto justify-start">
+          <TabsTrigger value="handover" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <KeyRound className="h-3.5 w-3.5" />
             Handover & Possession
           </TabsTrigger>
 
-          <TabsTrigger
-            value="cam"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="cam" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Receipt className="h-3.5 w-3.5" />
             CAM Billing Ledger
           </TabsTrigger>
 
-          <TabsTrigger
-            value="tickets"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="tickets" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <Wrench className="h-3.5 w-3.5" />
             Service Tickets & SLA
           </TabsTrigger>
 
-          <TabsTrigger
-            value="assets"
-            className="text-xs h-9 gap-1.5 px-3 font-medium border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none"
-          >
+          <TabsTrigger value="assets" className="text-xs h-8 gap-1.5 px-3 font-medium">
             <ShieldCheck className="h-3.5 w-3.5" />
             Facility Assets & AMC
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="handover" className="outline-none space-y-4 pt-2">
+        <TabsContent value="handover" className="outline-none space-y-4">
           <HandoverPossessionView />
         </TabsContent>
 
-        <TabsContent value="cam" className="outline-none space-y-4 pt-2">
+        <TabsContent value="cam" className="outline-none space-y-4">
           <CamBillingView />
         </TabsContent>
 
-        <TabsContent value="tickets" className="outline-none space-y-4 pt-2">
+        <TabsContent value="tickets" className="outline-none space-y-4">
           <ServiceTicketsView />
         </TabsContent>
 
-        <TabsContent value="assets" className="outline-none space-y-4 pt-2">
+        <TabsContent value="assets" className="outline-none space-y-4">
           <FacilityAssetsView />
         </TabsContent>
       </Tabs>

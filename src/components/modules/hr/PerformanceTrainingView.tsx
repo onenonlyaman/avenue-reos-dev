@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { Award, GraduationCap, Target, AlertCircle, Loader2 , Plus } from "lucide-react";
+import { Award, GraduationCap, Target, AlertCircle, Loader2, Plus } from "lucide-react";
 import { hrApi, PerformanceGoal } from "@/services/hrApi";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
 
@@ -42,7 +42,7 @@ export function PerformanceTrainingView() {
     );
   }
 
-  if (error) {
+  if (error && goals.length === 0) {
     return (
       <CorporateEmptyState
         title="Performance Analytics Unreachable"
@@ -70,46 +70,53 @@ export function PerformanceTrainingView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Departmental OKRs & Trainee Performance Analytics Engine
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Key results, site apprentice evaluation milestones, and organizational objectives.
+          </p>
         </div>
 
-        
-        <Button size="sm" variant="outline" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsRecordFormOpen(true)}>
-
-          <Plus className="h-3.5 w-3.5" />
-
-          Set Objective
-
-        </Button>
-<div className="flex items-center gap-1 bg-muted p-1 rounded border border-border">
+        <div className="flex items-center gap-2">
           <Button
-            variant={filterMode === "ALL" ? "default" : "ghost"}
             size="sm"
-            className="h-7 text-xs px-2.5"
-            onClick={() => setFilterMode("ALL")}
+            variant="outline"
+            className="h-8 text-xs font-semibold gap-1.5"
+            onClick={() => setIsRecordFormOpen(true)}
           >
-            <Target className="mr-1 h-3 w-3" />
-            All Performance ({goals.length})
+            <Plus className="h-3.5 w-3.5" />
+            Set Objective
           </Button>
 
-          <Button
-            variant={filterMode === "TRAINEE" ? "default" : "ghost"}
-            size="sm"
-            className="h-7 text-xs px-2.5"
-            onClick={() => setFilterMode("TRAINEE")}
-          >
-            <GraduationCap className="mr-1 h-3 w-3" />
-            Trainee Analytics ({traineeCount})
-          </Button>
+          <div className="flex items-center gap-1 bg-muted p-1 rounded border border-border">
+            <Button
+              variant={filterMode === "ALL" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 text-xs px-2.5"
+              onClick={() => setFilterMode("ALL")}
+            >
+              <Target className="mr-1 h-3 w-3" />
+              All ({goals.length})
+            </Button>
 
-          <Button
-            variant={filterMode === "OKRS" ? "default" : "ghost"}
-            size="sm"
-            className="h-7 text-xs px-2.5"
-            onClick={() => setFilterMode("OKRS")}
-          >
-            <Award className="mr-1 h-3 w-3" />
-            Corporate OKRs ({okrCount})
-          </Button>
+            <Button
+              variant={filterMode === "TRAINEE" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 text-xs px-2.5"
+              onClick={() => setFilterMode("TRAINEE")}
+            >
+              <GraduationCap className="mr-1 h-3 w-3" />
+              Trainees ({traineeCount})
+            </Button>
+
+            <Button
+              variant={filterMode === "OKRS" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 text-xs px-2.5"
+              onClick={() => setFilterMode("OKRS")}
+            >
+              <Award className="mr-1 h-3 w-3" />
+              OKRs ({okrCount})
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -121,64 +128,69 @@ export function PerformanceTrainingView() {
               ? "No active trainee skill evaluation records found for current apprentices."
               : "No active departmental goals or performance reviews recorded."
           }
-          actionLabel="Refresh Data"
-          onAction={loadData}
+          actionLabel="Set Objective"
+          onAction={() => setIsRecordFormOpen(true)}
           icon={Award}
         />
       ) : (
         <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted/40">
-              <TableRow>
-                <TableHead className="text-xs font-semibold">Employee / Apprentice Name</TableHead>
-                <TableHead className="text-xs font-semibold">Category & Department</TableHead>
-                <TableHead className="text-xs font-semibold">Target Milestone / OKR</TableHead>
-                <TableHead className="text-xs font-semibold text-center">Score Progress</TableHead>
-                <TableHead className="text-xs font-semibold text-center">Evaluation Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredGoals.map((g) => (
-                <TableRow key={g.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell className="text-xs py-3 font-semibold text-foreground">
-                    <div className="flex items-center gap-1.5">
-                      {g.isTrainee && <GraduationCap className="h-3.5 w-3.5 text-primary shrink-0" />}
-                      <span>{g.employeeName}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs py-3 font-medium text-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant="outline" className="text-[9px] border-border">
-                        {g.isTrainee ? "Site Trainee Apprentice" : "Permanent Staff"}
-                      </Badge>
-                      <span className="text-muted-foreground">{g.department}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs py-3 font-medium text-foreground">
-                    {g.title}
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-center font-mono font-bold text-foreground">
-                    {g.achievedScore} / {g.targetScore} ({Math.round((g.achievedScore / g.targetScore) * 100)}%)
-                  </TableCell>
-                  <TableCell className="text-xs py-3 text-center">
-                    {g.status === "ON_TRACK" || g.status === "COMPLETED" ? (
-                      <Badge variant="outline" className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border-emerald-300">
-                        {g.status}
-                      </Badge>
-                    ) : g.status === "AT_RISK" ? (
-                      <Badge variant="outline" className="text-[10px] font-bold bg-amber-100 text-amber-900 border-amber-300">
-                        AT RISK
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-[10px] font-bold bg-red-100 text-red-800 border-red-300">
-                        NEEDS IMPROVEMENT
-                      </Badge>
-                    )}
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-muted/40">
+                <TableRow>
+                  <TableHead className="text-xs font-semibold">Employee / Apprentice Name</TableHead>
+                  <TableHead className="text-xs font-semibold">Category & Department</TableHead>
+                  <TableHead className="text-xs font-semibold">Target Milestone / OKR</TableHead>
+                  <TableHead className="text-xs font-semibold text-center">Score Progress</TableHead>
+                  <TableHead className="text-xs font-semibold text-center">Evaluation Status</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredGoals.map((g) => {
+                  const pct = g.targetScore > 0 ? Math.min(100, Math.round((g.achievedScore / g.targetScore) * 100)) : 0;
+                  return (
+                    <TableRow key={g.id} className="hover:bg-muted/30 transition-colors">
+                      <TableCell className="text-xs py-3 font-semibold text-foreground">
+                        <div className="flex items-center gap-1.5">
+                          {g.isTrainee && <GraduationCap className="h-3.5 w-3.5 text-primary shrink-0" />}
+                          <span>{g.employeeName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs py-3 font-medium text-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-[9px] border-border">
+                            {g.isTrainee ? "Site Trainee Apprentice" : "Permanent Staff"}
+                          </Badge>
+                          <span className="text-muted-foreground">{g.department}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs py-3 font-medium text-foreground">
+                        {g.title}
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-center font-mono font-bold text-foreground">
+                        {g.achievedScore} / {g.targetScore} ({pct}%)
+                      </TableCell>
+                      <TableCell className="text-xs py-3 text-center">
+                        {g.status === "ON_TRACK" || g.status === "COMPLETED" ? (
+                          <Badge variant="outline" className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border-emerald-300">
+                            {g.status}
+                          </Badge>
+                        ) : g.status === "AT_RISK" ? (
+                          <Badge variant="outline" className="text-[10px] font-bold bg-amber-100 text-amber-900 border-amber-300">
+                            AT RISK
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] font-bold bg-red-100 text-red-800 border-red-300">
+                            NEEDS IMPROVEMENT
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
 

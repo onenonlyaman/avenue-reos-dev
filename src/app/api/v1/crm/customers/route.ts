@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const customers = await prisma.masterCustomer.findMany({
-      where: { tenantId: ACTIVE_TENANT_ID },
+      where: { tenantId: auth.user.tenantId },
       orderBy: { createdAt: "desc" },
     });
 
@@ -72,14 +72,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    const randomSuffix = `${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const created = await prisma.masterCustomer.create({
       data: {
-        tenantId: ACTIVE_TENANT_ID,
-        customerCode: customerCode || `CUST-${Date.now().toString().slice(-6)}`,
-        fullName,
-        email: email || "",
-        phoneNumber,
-        taxIdentifier: taxIdentifier || null,
+        tenantId: auth.user.tenantId,
+        customerCode: customerCode?.trim() || `CUST-${randomSuffix}`,
+        fullName: fullName.trim(),
+        email: email?.trim() || "",
+        phoneNumber: phoneNumber.trim(),
+        taxIdentifier: taxIdentifier?.trim() || null,
         customerType: customerType || "INDIVIDUAL",
         status: "ACTIVE",
       },

@@ -48,8 +48,12 @@ export function BudgetManagementView() {
       setError(null);
       const [bRes, pRes, ccRes] = await Promise.all([
         financeApi.getBudgets(),
-        fetch("/api/v1/projects").then((r) => r.json()),
-        fetch("/api/v1/finance/cost-centers").then((r) => r.json()),
+        fetch("/api/v1/projects")
+          .then(async (r) => (r.ok ? r.json() : { success: false, data: [] }))
+          .catch(() => ({ success: false, data: [] })),
+        fetch("/api/v1/finance/cost-centers")
+          .then(async (r) => (r.ok ? r.json() : { success: false, data: [] }))
+          .catch(() => ({ success: false, data: [] })),
       ]);
 
       setBudgets(bRes);

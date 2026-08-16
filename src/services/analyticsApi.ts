@@ -70,6 +70,9 @@ export interface CapitalAllocationRequest {
   riskRating: "Low" | "Medium" | "High / Critical";
   requiresHitl: boolean;
   status: "PENDING_BOARD_APPROVAL" | "APPROVED" | "REJECTED";
+  rejectionReason?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
 }
 
 export interface SimulateCashflowPayload {
@@ -127,8 +130,35 @@ export const analyticsApi = {
     return fetchEnvelope<EnterpriseRisk[]>(`${API_BASE}/risk`);
   },
 
+  async createEnterpriseRisk(payload: {
+    riskCategory: string;
+    associatedProjectSite: string;
+    riskVectorSummary: string;
+    impactRating?: string;
+    mitigationActionPlan: string;
+    riskLevel?: string;
+    requiresHitl?: boolean;
+  }): Promise<EnterpriseRisk> {
+    return fetchEnvelope<EnterpriseRisk>(`${API_BASE}/risk`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getPendingApprovals(): Promise<CapitalAllocationRequest[]> {
     return fetchEnvelope<CapitalAllocationRequest[]>(`${API_BASE}/approvals`);
+  },
+
+  async createCapitalAllocationRequest(payload: {
+    projectName: string;
+    requestedCapitalLakhs: number;
+    allocationPurpose: string;
+    riskRating?: string;
+  }): Promise<CapitalAllocationRequest> {
+    return fetchEnvelope<CapitalAllocationRequest>(`${API_BASE}/approvals`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   async authorizeCapitalAllocation(id: string): Promise<{ success: boolean; id: string }> {

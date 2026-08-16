@@ -3,9 +3,16 @@
 import React, { useEffect, useState } from "react";
 import { CorporateStatCard } from "@/components/core/CorporateStatCard";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
-import { TrendingUp, DollarSign, Building2, Users, Loader2 } from "lucide-react";
+import { TrendingUp, DollarSign, Building2, Users, Loader2, UserCheck } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+
+interface RepRealization {
+  name: string;
+  role: string;
+  realizedRevenueCr: number;
+  bookedUnitsCount: number;
+}
 
 interface AnalyticsData {
   quarterlyPipelineRealizationCr: number;
@@ -23,6 +30,7 @@ interface AnalyticsData {
     realizedRevenueCr: string;
     targetRevenueCr: string;
   }[];
+  salesRepRealization?: RepRealization[];
 }
 
 export function PipelineAnalyticsView() {
@@ -57,7 +65,7 @@ export function PipelineAnalyticsView() {
     );
   }
 
-  if (!data || (data.activeProspectCount === 0 && data.totalUnitsCount === 0)) {
+  if (!data || (data.activeProspectCount === 0 && data.totalUnitsCount === 0 && data.bookedUnitsCount === 0)) {
     return (
       <CorporateEmptyState
         title="No CRM Analytics Records Found"
@@ -67,6 +75,8 @@ export function PipelineAnalyticsView() {
       />
     );
   }
+
+  const salesReps = data.salesRepRealization || [];
 
   return (
     <div className="space-y-6">
@@ -117,48 +127,61 @@ export function PipelineAnalyticsView() {
               </h3>
             </div>
             <Badge variant="outline" className="text-[10px] font-mono">
-              Q3 REALIZATION
+              REAL-TIME PIPELINE
             </Badge>
           </div>
 
           <div className="space-y-3 pt-1">
-            {data.funnelStages.map((stage, idx) => (
-              <div key={stage.stage} className="space-y-1">
-                <div className="flex justify-between text-xs font-medium">
-                  <span className="text-foreground">{stage.stage}</span>
-                  <span className="font-mono text-muted-foreground">
-                    {stage.count} Prospects ({stage.conversion})
-                  </span>
+            {data.funnelStages.map((stage) => {
+              const numericPct = parseFloat(stage.conversion.replace("%", "")) || 0;
+              const barWidth = Math.max(4, Math.min(100, numericPct));
+
+              return (
+                <div key={stage.stage} className="space-y-1">
+                  <div className="flex justify-between text-xs font-medium">
+                    <span className="text-foreground">{stage.stage}</span>
+                    <span className="font-mono text-muted-foreground">
+                      {stage.count} ({stage.conversion}) • ₹{stage.valueLakhs} L
+                    </span>
+                  </div>
+                  <div className="h-3 w-full bg-muted rounded-full overflow-hidden flex">
+                    <div
+                      className="bg-primary h-full rounded-full transition-all duration-300"
+                      style={{ width: `${barWidth}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-3 w-full bg-muted rounded-full overflow-hidden flex">
-                  <div
-                    className="bg-primary h-full rounded-full transition-all duration-300"
-                    style={{ width: `${Math.max(10, 100 - idx * 15)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         <div className="bg-card text-card-foreground p-5 rounded-lg border border-border shadow-xs space-y-4">
           <div className="border-b border-border pb-3">
             <h3 className="text-sm font-bold font-heading text-foreground">
-              Sales Representative Realization
+              Sales Representative Attribution
             </h3>
           </div>
 
-          <div className="space-y-3 text-xs">
-            <div className="p-3 bg-muted/30 border border-border rounded flex items-center justify-between">
-              <div>
-                <div className="font-semibold text-foreground">Anand Verma</div>
-                <div className="text-[10px] text-muted-foreground">Senior Sales Executive</div>
+          <div className="space-y-3 text-xs overflow-y-auto max-h-[260px]">
+            {salesReps.length === 0 ? (
+              <div className="py-6 text-center text-xs text-muted-foreground">
+                No individual sales rep bookings on record yet.
               </div>
-              <div className="text-right font-mono">
-                <div className="font-bold text-emerald-800">₹{data.quarterlyPipelineRealizationCr.toFixed(2)} Cr</div>
-                <div className="text-[10px] text-muted-foreground">{data.bookedUnitsCount} Units Closed</div>
-              </div>
-            </div>
+            ) : (
+              salesReps.map((rep) => (
+                <div key={rep.name} className="p-3 bg-muted/30 border border-border rounded flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-foreground">{rep.name}</div>
+                    <div className="text-[10px] text-muted-foreground">{rep.role}</div>
+                  </div>
+                  <div className="text-right font-mono">
+                    <div className="font-bold text-emerald-800">₹{rep.realizedRevenueCr.toFixed(2)} Cr</div>
+                    <div className="text-[10px] text-muted-foreground">{rep.bookedUnitsCount} Unit(s) Closed</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -178,7 +201,7 @@ export function PipelineAnalyticsView() {
               <TableHead className="text-xs font-semibold text-center">Booked Units</TableHead>
               <TableHead className="text-xs font-semibold text-center">Occupancy Rate</TableHead>
               <TableHead className="text-xs font-semibold text-right">Realized Revenue</TableHead>
-              <TableHead className="text-xs font-semibold text-right">Target Revenue</TableHead>
+              <TableHead className="text-xs font-semibold text-right">Sanctioned Budget</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

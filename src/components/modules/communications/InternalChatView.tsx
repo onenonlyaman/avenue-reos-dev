@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,11 @@ export function InternalChatView() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const loadChannels = async () => {
     try {
@@ -37,15 +42,17 @@ export function InternalChatView() {
     }
   };
 
-  const loadMessages = async (channelId: string) => {
+  const loadMessages = async (channelId: string, isSilent = false) => {
     try {
-      setIsLoadingMessages(true);
+      if (!isSilent) setIsLoadingMessages(true);
       const data = await communicationsApi.getMessages(channelId);
       setMessages(data);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Channel messages could not be loaded");
+      if (!isSilent) {
+        setError(err instanceof Error ? err.message : "Channel messages could not be loaded");
+      }
     } finally {
-      setIsLoadingMessages(false);
+      if (!isSilent) setIsLoadingMessages(false);
     }
   };
 
@@ -59,6 +66,19 @@ export function InternalChatView() {
     }
   }, [selectedChannel]);
 
+  // Polling for live messages
+  useEffect(() => {
+    if (!selectedChannel) return;
+    const interval = setInterval(() => {
+      loadMessages(selectedChannel.id, true);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [selectedChannel?.id]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !selectedChannel) return;
@@ -67,9 +87,7 @@ export function InternalChatView() {
       setIsSending(true);
       const sent = await communicationsApi.sendMessage({
         channelId: selectedChannel.id,
-        senderName: "Operations Officer",
-        senderRole: "HQ Operations",
-        content: inputMessage,
+        content: inputMessage.trim(),
       });
       setMessages((prev) => [...prev, sent]);
       setInputMessage("");
@@ -77,6 +95,15 @@ export function InternalChatView() {
       setError(err instanceof Error ? err.message : "Message could not be saved");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleTogglePin = async (msgId: string, currentPin: boolean) => {
+    try {
+      const updated = await communicationsApi.togglePinMessage(msgId, !currentPin);
+      setMessages((prev) => prev.map((m) => (m.id === msgId ? updated : m)));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Pin state could not be changed");
     }
   };
 
@@ -186,13 +213,13 @@ export function InternalChatView() {
                     </div>
                   ) : messages.length === 0 ? (
                     <div className="text-center py-12 text-xs text-muted-foreground space-y-1">
-                      <p className="font-semibold text-foreground">Channel Created</p>
+                      <p className="font-semibold text-foreground">Channel Active</p>
                       <p>No messages posted yet in this channel. Send a message to start conversation.</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
                       {messages.map((msg) => (
-                        <div key={msg.id} className="space-y-1">
+                        <div key={msg.id} className="space-y-1 group">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-foreground">{msg.senderName}</span>
                             <span className="text-[10px] text-muted-foreground font-mono">({msg.senderRole})</span>
@@ -204,6 +231,13 @@ export function InternalChatView() {
                                 <Pin className="h-2.5 w-2.5" /> Pinned
                               </Badge>
                             )}
+                            <button
+                              onClick={() => handleTogglePin(msg.id, msg.isPinned)}
+                              title={msg.isPinned ? "Unpin message" : "Pin message"}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-muted-foreground hover:text-foreground rounded"
+                            >
+                              <Pin className={`h-3 w-3 ${msg.isPinned ? "text-amber-600 fill-amber-600" : ""}`} />
+                            </button>
                           </div>
 
                           <div className="p-3 rounded-lg bg-muted/30 border border-border text-xs text-foreground space-y-2">
@@ -223,6 +257,7 @@ export function InternalChatView() {
                           </div>
                         </div>
                       ))}
+                      <div ref={messagesEndRef} />
                     </div>
                   )}
                 </ScrollArea>

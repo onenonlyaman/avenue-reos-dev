@@ -22,13 +22,16 @@ export function ExecutiveDashboardView() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSummary = async () => {
+  const loadSummary = async (signal?: AbortSignal) => {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await dashboardApi.getSummary();
+      const data = await dashboardApi.getSummary({ signal });
       setSummary(data);
     } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
       setSummary(null);
       setError(err instanceof Error ? err.message : "Operating console figures could not be loaded");
     } finally {
@@ -37,7 +40,11 @@ export function ExecutiveDashboardView() {
   };
 
   useEffect(() => {
-    loadSummary();
+    const controller = new AbortController();
+    loadSummary(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   if (error) {
@@ -48,7 +55,7 @@ export function ExecutiveDashboardView() {
           title="Operating Figures Unavailable"
           description={error}
           actionLabel="Retry"
-          onAction={loadSummary}
+          onAction={() => loadSummary()}
           icon={AlertCircle}
         />
       </div>

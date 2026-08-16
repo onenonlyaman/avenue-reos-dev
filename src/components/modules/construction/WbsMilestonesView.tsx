@@ -157,7 +157,7 @@ export function WbsMilestonesView({
           icon={HardHat}
         />
       ) : (
-        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-hidden">
+        <div className="bg-card text-card-foreground rounded-lg border border-border shadow-xs overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/40">
               <TableRow>
@@ -236,24 +236,30 @@ export function WbsMilestonesView({
         title="Add Work Breakdown Milestone"
         endpoint="/api/v1/construction/wbs"
         submitLabel="Add Milestone"
+        transform={(vals) => ({
+          ...vals,
+          phaseWeightagePct: vals.phaseWeightagePct ? parseFloat(String(vals.phaseWeightagePct)) : 0,
+          financialAllocationLakhs: vals.financialAllocationLakhs ? parseFloat(String(vals.financialAllocationLakhs)) : 0,
+        })}
         fields={[
           {
             name: "projectId",
-            label: "Development",
+            label: "Development Project",
             type: "select",
             required: true,
             options: projects.filter((p) => p.id !== "all").map((p) => ({ value: p.id, label: p.name })),
           },
-          { name: "milestoneCode", label: "Milestone Reference", type: "text", required: true, halfWidth: true },
-          { name: "executionPhase", label: "Execution Phase", type: "text", required: true, halfWidth: true },
-          { name: "milestoneTitle", label: "Milestone Title", type: "text", required: true },
-          { name: "assignedContractor", label: "Assigned Contractor", type: "text", required: true, halfWidth: true },
-          { name: "phaseWeightagePct", label: "Phase Weightage (%)", type: "number", halfWidth: true },
+          { name: "milestoneCode", label: "Milestone Reference", type: "text", required: true, halfWidth: true, placeholder: "e.g. WBS-SUB-01" },
+          { name: "executionPhase", label: "Execution Phase", type: "text", required: true, halfWidth: true, placeholder: "e.g. Substructure & Foundation" },
+          { name: "milestoneTitle", label: "Milestone Title", type: "text", required: true, placeholder: "e.g. Raft Foundation Concrete Pouring" },
+          { name: "assignedContractor", label: "Assigned Contractor", type: "text", required: true, halfWidth: true, placeholder: "e.g. Apex Civil Infra" },
+          { name: "phaseWeightagePct", label: "Phase Weightage (%)", type: "number", halfWidth: true, placeholder: "e.g. 20" },
           { name: "targetStartDate", label: "Target Start", type: "date", required: true, halfWidth: true },
           { name: "targetCompletionDate", label: "Target Completion", type: "date", required: true, halfWidth: true },
-          { name: "financialAllocationLakhs", label: "Allocation (₹ Lakhs)", type: "number", halfWidth: true },
+          { name: "financialAllocationLakhs", label: "Allocation (₹ Lakhs)", type: "number", halfWidth: true, placeholder: "e.g. 45.00" },
         ]}
       />
     </div>
   );
 }
+

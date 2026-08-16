@@ -1,30 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
+import { prisma } from "@/lib/db";
+import { ensureLandParcelsTable } from "@/lib/legalDb";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
-import { HITL_LAND_ACQUISITION_LIMIT, REGISTRATION_FEE_RATE, STAMP_DUTY_RATE } from "@/lib/governance";
+import { HITL_LAND_ACQUISITION_LIMIT, REGISTRATION_FEE_RATE, STAMP_DUTY_RATE, LAKH_IN_RUPEES } from "@/lib/governance";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
+    await ensureLandParcelsTable();
+
     const model = (prisma as any).landParcel;
     let records: any[] = [];
 
     if (model?.findMany) {
       records = await model.findMany({
+        where: { tenantId },
         orderBy: { createdAt: "desc" },
       });
     } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM land_parcels WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
-        `;
-        records = raw || [];
-      } catch {
-        records = [];
-      }
+      const raw = await prisma.$queryRaw<any[]>`
+        SELECT * FROM land_parcels
+        WHERE tenant_id = ${tenantId}::uuid
+        ORDER BY created_at DESC
+      `;
+      records = raw || [];
     }
 
     const mapped = records.map((r: any) => {
@@ -33,9 +37,9 @@ export async function GET(request: NextRequest) {
       const plotSqft = plotAcres * 43560;
       const constructibleSqft = plotSqft * fsi;
       const baseVal = Number(r.baseLandValueAmount ?? r.base_land_value_amount ?? 0);
-      const stamp = baseVal * STAMP_DUTY_RATE;
-      const reg = baseVal * REGISTRATION_FEE_RATE;
-      const totalOutlay = baseVal + stamp + reg;
+      const stamp = Number(r.stampDutyAmount ?? r.stamp_duty_amount ?? (baseVal * STAMP_DUTY_RATE));
+      const reg = Number(r.registrationAmount ?? r.registration_amount ?? (baseVal * REGISTRATION_FEE_RATE));
+      const totalOutlay = Number(r.totalOutlayAmount ?? r.total_outlay_amount ?? (baseVal + stamp + reg));
 
       return {
         id: r.id,
@@ -49,10 +53,14 @@ export async function GET(request: NextRequest) {
         baseLandValueAmount: baseVal,
         stampDutyAmount: stamp,
         registrationAmount: reg,
-        totalOutlayLakhs: Number((totalOutlay / 100000).toFixed(2)),
+        totalOutlayLakhs: Number((totalOutlay / LAKH_IN_RUPEES).toFixed(2)),
         titleStatus: r.titleStatus || r.title_status || "Clear Title",
         acquisitionPhase: r.acquisitionPhase || r.acquisition_phase || "SOURCING",
         requiresHitl: Boolean(r.requiresHitl ?? r.requires_hitl),
+        rejectionReason: r.rejectionReason || r.rejection_reason || null,
+        approvedBy: r.approvedBy || r.approved_by || null,
+        reviewedAt: r.reviewedAt || r.reviewed_at || null,
+        createdAt: r.createdAt || r.created_at || new Date().toISOString(),
       };
     });
 
@@ -87,8 +95,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { parcelDescription, locationZone, plotAreaAcres, applicableFsi, baseLandValueAmount, titleStatus } = body;
-    const tenantId = ACTIVE_TENANT_ID;
+    const parcelDescription = (body.parcelDescription || body.parcelName || "").trim();
+    const locationZone = (body.locationZone || body.location || "").trim();
+    const { plotAreaAcres, applicableFsi, titleStatus } = body;
+    const baseLandValueAmount = body.baseLandValueAmount || body.acquisitionCost || body.amount;
+    const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
 
     if (!parcelDescription || !locationZone) {
       return NextResponse.json({
@@ -102,17 +113,58 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const acres = Number(plotAreaAcres || 0);
-    const fsi = Number(applicableFsi || 1.5);
-    const baseVal = Number(baseLandValueAmount || 0);
+    const acres = Number(plotAreaAcres);
+    if (!Number.isFinite(acres) || acres <= 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "INVALID_PLOT_AREA", message: "Plot area in acres must be greater than zero." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const fsi = Number(applicableFsi);
+    if (!Number.isFinite(fsi) || fsi <= 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "INVALID_FSI", message: "Applicable FSI must be a positive number." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const baseVal = Number(baseLandValueAmount);
+    if (!Number.isFinite(baseVal) || baseVal <= 0) {
+      return NextResponse.json({
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: { code: "INVALID_VALUATION", message: "Base land valuation must be greater than zero." },
+        meta: null,
+      }, { status: 400 });
+    }
+
+    const validTitles = ["Clear Title", "Title Under Verification", "Litigated / Encumbered"];
+    const title = validTitles.includes(titleStatus) ? titleStatus : "Clear Title";
+
     const stamp = baseVal * STAMP_DUTY_RATE;
     const reg = baseVal * REGISTRATION_FEE_RATE;
     const totalOutlay = baseVal + stamp + reg;
 
-    const title = titleStatus || "Clear Title";
     const requiresHitl = totalOutlay > HITL_LAND_ACQUISITION_LIMIT || title !== "Clear Title";
     const phase = requiresHitl ? "FEASIBILITY" : "DUE_DILIGENCE";
-    const ref = `LND-${Date.now().toString().slice(-6)}`;
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const ref = `LND-${Date.now().toString().slice(-6)}-${randomSuffix}`;
+
+    await ensureLandParcelsTable();
 
     const model = (prisma as any).landParcel;
     let created: any = null;
@@ -136,44 +188,20 @@ export async function POST(request: NextRequest) {
         },
       });
     } else {
-      try {
-        await runtimeDdl("table:land_parcels", () => prisma.$executeRaw`
-          CREATE TABLE IF NOT EXISTS land_parcels (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            tenant_id UUID NOT NULL,
-            parcel_reference VARCHAR(100) NOT NULL,
-            parcel_description VARCHAR(255) NOT NULL,
-            location_zone VARCHAR(255) NOT NULL,
-            plot_area_acres DECIMAL(15,2) NOT NULL,
-            applicable_fsi DECIMAL(5,2) NOT NULL,
-            base_land_value_amount DECIMAL(15,2) NOT NULL,
-            stamp_duty_amount DECIMAL(15,2) NOT NULL,
-            registration_amount DECIMAL(15,2) NOT NULL,
-            total_outlay_amount DECIMAL(15,2) NOT NULL,
-            title_status VARCHAR(100) NOT NULL,
-            acquisition_phase VARCHAR(50) NOT NULL,
-            requires_hitl BOOLEAN NOT NULL DEFAULT false,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-          )
-        `);
-        const inserted = await prisma.$queryRaw<any[]>`
-          INSERT INTO land_parcels (
-            tenant_id, parcel_reference, parcel_description, location_zone,
-            plot_area_acres, applicable_fsi, base_land_value_amount,
-            stamp_duty_amount, registration_amount, total_outlay_amount,
-            title_status, acquisition_phase, requires_hitl
-          ) VALUES (
-            ${tenantId}::uuid, ${ref}, ${parcelDescription}, ${locationZone},
-            ${acres}, ${fsi}, ${baseVal}, ${stamp}, ${reg}, ${totalOutlay},
-            ${title}, ${phase}, ${requiresHitl}
-          )
-          RETURNING *
-        `;
-        created = inserted[0];
-      } catch (err: unknown) {
-        throw new Error(safeErrorMessage(err, "Land parcel could not be saved"));
-      }
+      const inserted = await prisma.$queryRaw<any[]>`
+        INSERT INTO land_parcels (
+          tenant_id, parcel_reference, parcel_description, location_zone,
+          plot_area_acres, applicable_fsi, base_land_value_amount,
+          stamp_duty_amount, registration_amount, total_outlay_amount,
+          title_status, acquisition_phase, requires_hitl
+        ) VALUES (
+          ${tenantId}::uuid, ${ref}, ${parcelDescription}, ${locationZone},
+          ${acres}, ${fsi}, ${baseVal}, ${stamp}, ${reg}, ${totalOutlay},
+          ${title}, ${phase}, ${requiresHitl}
+        )
+        RETURNING *
+      `;
+      created = inserted[0];
     }
 
     const plotSqft = acres * 43560;
@@ -196,10 +224,14 @@ export async function POST(request: NextRequest) {
         baseLandValueAmount: baseVal,
         stampDutyAmount: stamp,
         registrationAmount: reg,
-        totalOutlayLakhs: Number((totalOutlay / 100000).toFixed(2)),
+        totalOutlayLakhs: Number((totalOutlay / LAKH_IN_RUPEES).toFixed(2)),
         titleStatus: title,
         acquisitionPhase: phase,
         requiresHitl,
+        rejectionReason: null,
+        approvedBy: null,
+        reviewedAt: null,
+        createdAt: created.createdAt || created.created_at,
       },
       error: null,
       meta: null,

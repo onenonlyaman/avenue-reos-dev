@@ -22,7 +22,7 @@ export function RolePermissionsModal({
   const [roles, setRoles] = useState<SystemRolePermission[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [savingRole, setSavingRole] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -42,16 +42,23 @@ export function RolePermissionsModal({
   }, [isOpen]);
 
   const handleTogglePermission = async (role: SystemRolePermission, key: keyof SystemRolePermission) => {
+    const operationKey = `${role.roleName}-${key}`;
+    const previous = [...roles];
+    const updated = { ...role, [key]: !role[key] };
+
     try {
-      setSavingRole(role.roleName);
-      const updated = { ...role, [key]: !role[key] };
-      await settingsApi.updateRolePermission(updated);
+      setSavingKey(operationKey);
+      setError(null);
+      // Optimistic update
       setRoles((prev) => prev.map((r) => (r.roleName === role.roleName ? updated : r)));
+      await settingsApi.updateRolePermission(updated);
       onPermissionsUpdated();
     } catch (err: unknown) {
+      // Rollback on error
+      setRoles(previous);
       setError(err instanceof Error ? err.message : "Role permission could not be saved");
     } finally {
-      setSavingRole(null);
+      setSavingKey(null);
     }
   };
 
@@ -71,8 +78,8 @@ export function RolePermissionsModal({
             <ShieldCheck className="h-5 w-5 text-primary" />
             Configure Role Permission Vectors
           </DialogTitle>
-          <DialogDescription className="sr-only">
-            Configure Read, Create, Update, Delete, and HITL Authorization privileges across corporate system roles.
+          <DialogDescription className="text-xs text-muted-foreground">
+            Configure Read, Create, Update, Delete, and Governance Authorization privileges across corporate system roles.
           </DialogDescription>
         </DialogHeader>
 
@@ -85,7 +92,7 @@ export function RolePermissionsModal({
 
           {isLoading ? (
             <div className="flex items-center justify-center p-8 text-xs text-muted-foreground gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
               Loading system role permission vectors...
             </div>
           ) : (
@@ -96,56 +103,61 @@ export function RolePermissionsModal({
                     <span className="text-xs font-bold text-foreground">
                       {r.roleName}
                     </span>
-                    {savingRole === r.roleName && (
+                    {savingKey?.startsWith(`${r.roleName}-`) && (
                       <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                         <Loader2 className="h-3 w-3 animate-spin" /> Saving...
                       </span>
                     )}
                   </div>
 
-                  <div className="grid grid-cols-5 gap-2 bg-muted/30 p-2.5 rounded border border-border text-[11px]">
-                    <div className="flex items-center justify-between">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-muted/30 p-2.5 rounded border border-border text-[11px]">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span className="text-muted-foreground font-medium">Read</span>
                       <Switch
                         checked={r.canRead}
                         onCheckedChange={() => handleTogglePermission(r, "canRead")}
-                        disabled={savingRole === r.roleName}
+                        disabled={savingKey === `${r.roleName}-canRead`}
+                        aria-label={`${r.roleName} Read permission`}
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span className="text-muted-foreground font-medium">Create</span>
                       <Switch
                         checked={r.canCreate}
                         onCheckedChange={() => handleTogglePermission(r, "canCreate")}
-                        disabled={savingRole === r.roleName}
+                        disabled={savingKey === `${r.roleName}-canCreate`}
+                        aria-label={`${r.roleName} Create permission`}
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span className="text-muted-foreground font-medium">Update</span>
                       <Switch
                         checked={r.canUpdate}
                         onCheckedChange={() => handleTogglePermission(r, "canUpdate")}
-                        disabled={savingRole === r.roleName}
+                        disabled={savingKey === `${r.roleName}-canUpdate`}
+                        aria-label={`${r.roleName} Update permission`}
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span className="text-muted-foreground font-medium">Delete</span>
                       <Switch
                         checked={r.canDelete}
                         onCheckedChange={() => handleTogglePermission(r, "canDelete")}
-                        disabled={savingRole === r.roleName}
+                        disabled={savingKey === `${r.roleName}-canDelete`}
+                        aria-label={`${r.roleName} Delete permission`}
                       />
                     </div>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <span className="text-muted-foreground font-medium">HITL</span>
                       <Switch
                         checked={r.canAuthorizeHitl}
                         onCheckedChange={() => handleTogglePermission(r, "canAuthorizeHitl")}
-                        disabled={savingRole === r.roleName}
+                        disabled={savingKey === `${r.roleName}-canAuthorizeHitl`}
+                        aria-label={`${r.roleName} Human-In-The-Loop Sign-Off permission`}
                       />
                     </div>
                   </div>
@@ -164,3 +176,4 @@ export function RolePermissionsModal({
     </Dialog>
   );
 }
+

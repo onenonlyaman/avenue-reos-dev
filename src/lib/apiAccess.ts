@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { ROLE_PERMISSIONS, findRoleRule } from "@/lib/permissions";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { IS_PRODUCTION } from "@/lib/config";
 import { readSessionToken, resolveSession, touchSession, SessionUser } from "@/lib/session";
@@ -17,7 +17,7 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  */
 interface NamespaceRule {
   readPrefixes: string[] | null;
-  writePrefixes: string[];
+  writePrefixes: string[] | null;
 }
 
 const NAMESPACE_RULES: Record<string, NamespaceRule> = {
@@ -36,7 +36,10 @@ const NAMESPACE_RULES: Record<string, NamespaceRule> = {
   integrations: { readPrefixes: ["/integrations"], writePrefixes: ["/integrations"] },
   settings: { readPrefixes: ["/settings"], writePrefixes: ["/settings"] },
   users: { readPrefixes: ["/users"], writePrefixes: ["/users"] },
+  auth: { readPrefixes: null, writePrefixes: null },
+  profile: { readPrefixes: null, writePrefixes: null },
 
+  notifications: { readPrefixes: null, writePrefixes: null },
   system: { readPrefixes: null, writePrefixes: ["/settings"] },
   dashboard: { readPrefixes: null, writePrefixes: ["/settings"] },
   search: { readPrefixes: null, writePrefixes: ["/settings"] },
@@ -52,7 +55,7 @@ export function apiNamespaceFor(pathname: string): string | null {
 function roleHoldsPrefix(role: string, prefixes: string[]): boolean {
   if (ADMIN_ROLES.has(role)) return true;
 
-  const rule = ROLE_PERMISSIONS[role];
+  const rule = findRoleRule(role);
   if (!rule) return false;
   if (rule.allowedPrefixes.includes("*")) return true;
 
@@ -60,6 +63,11 @@ function roleHoldsPrefix(role: string, prefixes: string[]): boolean {
 }
 
 export function isApiCallAllowedForRole(role: string, method: string, pathname: string): boolean {
+  // Self-session management is accessible to any authenticated user
+  if (pathname.startsWith("/api/v1/users/sessions")) {
+    return true;
+  }
+
   const namespace = apiNamespaceFor(pathname);
   if (!namespace) return false;
 
@@ -73,7 +81,7 @@ export function isApiCallAllowedForRole(role: string, method: string, pathname: 
     return rule.readPrefixes === null || roleHoldsPrefix(role, rule.readPrefixes);
   }
 
-  return roleHoldsPrefix(role, rule.writePrefixes);
+  return rule.writePrefixes === null || roleHoldsPrefix(role, rule.writePrefixes);
 }
 
 export function envelope(

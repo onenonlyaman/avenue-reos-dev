@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { ACTIVE_TENANT_ID } from "@/lib/tenant";
+import { requireAdmin, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireApiAccess(request);
+  const auth = await requireAdmin(request);
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -22,11 +23,36 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    await prisma.$executeRaw`
-      UPDATE user_role_approvals
-      SET status = 'APPROVED'
-      WHERE id = ${id}::uuid
-    `;
+    const tenantId = ACTIVE_TENANT_ID;
+
+    // Atomic transaction: update approval status and elevate target user in system_users
+    await prisma.$transaction(async (tx) => {
+      const records = await tx.$queryRaw<{ user_id: string | null; target_user_name: string; requested_role: string }[]>`
+        UPDATE user_role_approvals
+        SET status = 'APPROVED'
+        WHERE id = ${id}::uuid AND tenant_id = ${tenantId}::uuid AND status = 'PENDING_APPROVAL'
+        RETURNING user_id, target_user_name, requested_role
+      `;
+
+      if (!records || records.length === 0) {
+        throw new Error("Approval record not found or already processed.");
+      }
+
+      const item = records[0];
+      if (item.user_id) {
+        await tx.$executeRaw`
+          UPDATE system_users
+          SET role = ${item.requested_role}
+          WHERE id = ${item.user_id}::uuid AND tenant_id = ${tenantId}::uuid
+        `;
+      } else {
+        await tx.$executeRaw`
+          UPDATE system_users
+          SET role = ${item.requested_role}
+          WHERE full_name = ${item.target_user_name} AND tenant_id = ${tenantId}::uuid
+        `;
+      }
+    });
 
     return NextResponse.json({
       success: true,

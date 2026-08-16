@@ -1,13 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Loader2, KeyRound } from "lucide-react";
 import { facilityApi, ScheduleHandoverPayload, UnitHandover } from "@/services/facilityApi";
+
+interface AvailableUnit {
+  id: string;
+  unitNumber: string;
+  projectName: string;
+  towerName: string;
+}
 
 interface ScheduleHandoverModalProps {
   isOpen: boolean;
@@ -20,20 +28,54 @@ export function ScheduleHandoverModal({
   onClose,
   onHandoverScheduled,
 }: ScheduleHandoverModalProps) {
-  const [unitName, setUnitName] = useState<string>("Avenue Horizon - Unit 402");
-  const [buyerName, setBuyerName] = useState<string>("Rajesh Patil");
-  const [targetHandoverDate, setTargetHandoverDate] = useState<string>(
-    new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
-  );
+  const [availableUnits, setAvailableUnits] = useState<AvailableUnit[]>([]);
+  const [selectedUnitId, setSelectedUnitId] = useState<string>("");
+  const [unitName, setUnitName] = useState<string>("");
+  const [buyerName, setBuyerName] = useState<string>("");
+  const [targetHandoverDate, setTargetHandoverDate] = useState<string>("");
   const [desnaggingCompletionPct, setDesnaggingCompletionPct] = useState<number | "">(100);
   const [outstandingBalance, setOutstandingBalance] = useState<number | "">(0);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setError(null);
+      setUnitName("");
+      setBuyerName("");
+      setSelectedUnitId("");
+      setDesnaggingCompletionPct(100);
+      setOutstandingBalance(0);
+
+      // Default date to 14 days in future
+      const defaultDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      setTargetHandoverDate(defaultDate);
+
+      // Fetch master units
+      fetch("/api/v1/units")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.data)) {
+            setAvailableUnits(data.data);
+          }
+        })
+        .catch(() => {
+          setAvailableUnits([]);
+        });
+    }
+  }, [isOpen]);
+
+  const handleUnitSelect = (unitId: string) => {
+    setSelectedUnitId(unitId);
+    const u = availableUnits.find((item) => item.id === unitId);
+    if (u) {
+      setUnitName(`${u.projectName} - Tower ${u.towerName} - Unit ${u.unitNumber}`);
+    }
+  };
+
   const balanceVal = typeof outstandingBalance === "number" ? outstandingBalance : 0;
   const desnagVal = typeof desnaggingCompletionPct === "number" ? desnaggingCompletionPct : 0;
-
   const requiresHitl = balanceVal > 0 || desnagVal < 100;
 
   const handleSubmit = async () => {
@@ -41,15 +83,16 @@ export function ScheduleHandoverModal({
       setIsSubmitting(true);
       setError(null);
 
-      if (!unitName) throw new Error("Enter property unit description.");
-      if (!buyerName) throw new Error("Enter buyer full name.");
+      if (!unitName.trim()) throw new Error("Please specify the property unit.");
+      if (!buyerName.trim()) throw new Error("Please enter buyer full name.");
+      if (!targetHandoverDate) throw new Error("Please select target handover date.");
 
       const payload: ScheduleHandoverPayload = {
-        unitName,
-        buyerName,
+        unitName: unitName.trim(),
+        buyerName: buyerName.trim(),
         targetHandoverDate,
-        desnaggingCompletionPct: desnagVal,
-        outstandingBalance: balanceVal,
+        desnaggingCompletionPct: Math.max(0, Math.min(100, desnagVal)),
+        outstandingBalance: Math.max(0, balanceVal),
       };
 
       const created = await facilityApi.scheduleHandover(payload);
@@ -90,9 +133,27 @@ export function ScheduleHandoverModal({
             </div>
           )}
 
+          {availableUnits.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Select Registered Development Unit</Label>
+              <Select value={selectedUnitId} onValueChange={(val) => val && handleUnitSelect(val)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Choose a registered inventory unit (optional)" />
+                </SelectTrigger>
+                <SelectContent className="max-h-48">
+                  {availableUnits.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.projectName} • {u.towerName} • Unit {u.unitNumber}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Property Development Unit</Label>
+              <Label className="text-xs font-medium">Property Development Unit Description *</Label>
               <Input
                 value={unitName}
                 onChange={(e) => setUnitName(e.target.value)}
@@ -102,7 +163,7 @@ export function ScheduleHandoverModal({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Buyer Full Name</Label>
+              <Label className="text-xs font-medium">Buyer Full Name *</Label>
               <Input
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
@@ -120,9 +181,12 @@ export function ScheduleHandoverModal({
                 min="0"
                 max="100"
                 value={desnaggingCompletionPct}
-                onChange={(e) => setDesnaggingCompletionPct(e.target.value ? parseFloat(e.target.value) : "")}
+                onChange={(e) => setDesnaggingCompletionPct(e.target.value !== "" ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono font-bold"
               />
+              <span className="text-[10px] text-muted-foreground">
+                Punch-list items resolved by site engineering
+              </span>
             </div>
 
             <div className="space-y-1.5">
@@ -131,9 +195,12 @@ export function ScheduleHandoverModal({
                 type="number"
                 min="0"
                 value={outstandingBalance}
-                onChange={(e) => setOutstandingBalance(e.target.value ? parseFloat(e.target.value) : "")}
+                onChange={(e) => setOutstandingBalance(e.target.value !== "" ? parseFloat(e.target.value) : "")}
                 className="h-8 text-xs font-mono font-bold"
               />
+              <span className="text-[10px] text-muted-foreground">
+                Set to 0 if financial NOC is cleared in full
+              </span>
             </div>
           </div>
 
@@ -151,8 +218,8 @@ export function ScheduleHandoverModal({
             <div className="bg-amber-50 border border-amber-300 text-amber-900 p-3 rounded-lg flex items-start gap-2.5">
               <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
               <div className="text-xs leading-relaxed">
-                <span className="font-semibold block mb-0.5">Outstanding Financial Dues Warning</span>
-                Unit possession handovers with outstanding finance balances or incomplete punch items mandate Facility Director authorization before key release.
+                <span className="font-semibold block mb-0.5">Director Governance Escalation</span>
+                Unit possession handovers with outstanding finance balances or incomplete punch items mandate Operations Director authorization before physical key release.
               </div>
             </div>
           )}
@@ -166,7 +233,7 @@ export function ScheduleHandoverModal({
             size="sm"
             className={`h-8 text-xs font-medium ${requiresHitl ? "bg-amber-600 hover:bg-amber-700 text-white" : ""}`}
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !unitName || !buyerName}
           >
             {isSubmitting ? (
               <span className="flex items-center gap-1.5">

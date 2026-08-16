@@ -10,6 +10,8 @@ import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
 import { Building2, Users, HardHat, FileText, AlertCircle, Loader2, Save } from "lucide-react";
 import { settingsApi, TenantProfile } from "@/services/settingsApi";
 
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 export function TenantSettingsView() {
   const [profile, setProfile] = useState<TenantProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -18,9 +20,9 @@ export function TenantSettingsView() {
   const [legalName, setLegalName] = useState<string>("");
   const [gstin, setGstin] = useState<string>("");
   const [address, setAddress] = useState<string>("");
-  const [timezone, setTimezone] = useState<string>("");
-  const [currency, setCurrency] = useState<string>("");
-  const [fiscalYear, setFiscalYear] = useState<string>("");
+  const [timezone, setTimezone] = useState<string>("Asia/Kolkata (IST)");
+  const [currency, setCurrency] = useState<string>("INR (₹)");
+  const [fiscalYear, setFiscalYear] = useState<string>("April - March (India)");
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
@@ -32,12 +34,12 @@ export function TenantSettingsView() {
       const data = await settingsApi.getTenantProfile();
       setProfile(data);
       if (data) {
-        setLegalName(data.organizationLegalName);
-        setGstin(data.gstinRegistration);
-        setAddress(data.registeredAddress);
-        setTimezone(data.operationalTimezone);
-        setCurrency(data.baseCurrency);
-        setFiscalYear(data.fiscalYearCycle);
+        setLegalName(data.organizationLegalName || "");
+        setGstin(data.gstinRegistration || "");
+        setAddress(data.registeredAddress || "");
+        setTimezone(data.operationalTimezone || "Asia/Kolkata (IST)");
+        setCurrency(data.baseCurrency || "INR (₹)");
+        setFiscalYear(data.fiscalYearCycle || "April - March (India)");
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Organisation profile could not be loaded");
@@ -53,18 +55,33 @@ export function TenantSettingsView() {
   const handleSave = async () => {
     try {
       setIsSaving(true);
+      setError(null);
       setSaveSuccess(false);
+
+      const trimmedName = legalName.trim();
+      const trimmedGstin = gstin.trim().toUpperCase();
+      const trimmedAddress = address.trim();
+
+      if (!trimmedName) throw new Error("Organization legal name is required.");
+      if (!trimmedGstin) throw new Error("GSTIN registration reference is required.");
+      if (!GSTIN_REGEX.test(trimmedGstin)) {
+        throw new Error("Invalid GSTIN format. Must be a 15-character statutory GST identification number (e.g. 27AAAAA0000A1Z5).");
+      }
+      if (!trimmedAddress) throw new Error("Registered corporate address is required.");
+
       const updated = await settingsApi.updateTenantProfile({
-        organizationLegalName: legalName,
-        gstinRegistration: gstin,
-        registeredAddress: address,
-        operationalTimezone: timezone,
-        baseCurrency: currency,
-        fiscalYearCycle: fiscalYear,
+        organizationLegalName: trimmedName,
+        gstinRegistration: trimmedGstin,
+        registeredAddress: trimmedAddress,
+        operationalTimezone: timezone.trim() || "Asia/Kolkata (IST)",
+        baseCurrency: currency.trim() || "INR (₹)",
+        fiscalYearCycle: fiscalYear.trim() || "April - March (India)",
       });
+
       setProfile(updated);
+      setGstin(trimmedGstin);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      setTimeout(() => setSaveSuccess(false), 4000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Organization settings could not be completed");
     } finally {
@@ -76,12 +93,12 @@ export function TenantSettingsView() {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center text-xs text-muted-foreground space-y-2 bg-card rounded-lg border border-border">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        <span>Loading organisation profile...</span>
+        <span>Loading organisation profile from database...</span>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !profile) {
     return (
       <CorporateEmptyState
         title="Organization Settings Error"
@@ -112,16 +129,19 @@ export function TenantSettingsView() {
           <h3 className="text-sm font-bold font-heading text-foreground">
             Multi-Tenant Organization & Financial Localization Profile
           </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Manage statutory tax identifiers, functional currency, and operational timezone.
+          </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <CorporateStatCard
           label="Legal Corporate Entity"
-          value={profile.organizationLegalName}
+          value={profile.organizationLegalName || "Enterprise Entity"}
           subtext="Registered enterprise name"
           icon={Building2}
-          trend="Multi-Tenant"
+          trend="Corporate Entity"
           trendDirection="neutral"
         />
 
@@ -130,25 +150,25 @@ export function TenantSettingsView() {
           value={`${profile.activeUsersCount} Active Accounts`}
           subtext="With RBAC role assignments"
           icon={Users}
-          trend="User Directory"
+          trend="Live Accounts"
           trendDirection="up"
         />
 
         <CorporateStatCard
-          label="Operational Site Accounts"
-          value={`${profile.activeSiteAccountsCount} Nashik Sites`}
-          subtext="Connected site offices"
+          label="Operational Project Sites"
+          value={`${profile.activeSiteAccountsCount} Active Locations`}
+          subtext="Connected project offices"
           icon={HardHat}
-          trend="Active Locations"
+          trend="Site Network"
           trendDirection="neutral"
         />
 
         <CorporateStatCard
           label="GSTIN Tax Credentials"
-          value={profile.gstinRegistration}
+          value={profile.gstinRegistration || "Pending Registration"}
           subtext="State tax registration reference"
           icon={FileText}
-          trend="GST Compliant"
+          trend="Statutory Tax"
           trendDirection="up"
         />
       </div>
@@ -160,9 +180,15 @@ export function TenantSettingsView() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 pt-4 text-xs">
+          {error && (
+            <div className="p-3 bg-destructive/10 border border-destructive/30 text-destructive rounded text-xs">
+              {error}
+            </div>
+          )}
+
           {saveSuccess && (
             <div className="p-3 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded text-xs font-semibold">
-              Organization profile configuration updated successfully.
+              Organization profile configuration updated successfully in database.
             </div>
           )}
 
@@ -172,16 +198,19 @@ export function TenantSettingsView() {
               <Input
                 value={legalName}
                 onChange={(e) => setLegalName(e.target.value)}
-                className="h-8 text-xs"
+                placeholder="e.g. Avenue Builders Pvt. Ltd."
+                className="h-8 text-xs font-medium"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">GSTIN Tax Registration Reference</Label>
+              <Label className="text-xs font-medium">GSTIN Tax Registration Reference (15 Characters)</Label>
               <Input
                 value={gstin}
-                onChange={(e) => setGstin(e.target.value)}
-                className="h-8 text-xs font-mono font-bold"
+                onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                placeholder="e.g. 27AAAAA0000A1Z5"
+                maxLength={15}
+                className="h-8 text-xs font-mono font-bold uppercase"
               />
             </div>
           </div>
@@ -191,6 +220,7 @@ export function TenantSettingsView() {
             <Input
               value={address}
               onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. Gangapur Road, Nashik, Maharashtra 422013"
               className="h-8 text-xs"
             />
           </div>
@@ -201,6 +231,7 @@ export function TenantSettingsView() {
               <Input
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
+                placeholder="Asia/Kolkata (IST)"
                 className="h-8 text-xs font-mono"
               />
             </div>
@@ -210,6 +241,7 @@ export function TenantSettingsView() {
               <Input
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
+                placeholder="INR (₹)"
                 className="h-8 text-xs font-mono"
               />
             </div>
@@ -219,6 +251,7 @@ export function TenantSettingsView() {
               <Input
                 value={fiscalYear}
                 onChange={(e) => setFiscalYear(e.target.value)}
+                placeholder="April - March (India)"
                 className="h-8 text-xs font-mono"
               />
             </div>
@@ -244,3 +277,4 @@ export function TenantSettingsView() {
     </div>
   );
 }
+

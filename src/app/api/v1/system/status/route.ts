@@ -39,6 +39,8 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   let eventStreamStatus: "OPERATIONAL" | "DEGRADED" | "UNKNOWN" = "UNKNOWN";
   let eventStreamFailuresLastHour: number | null = null;
 
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
     const rows = await prisma.$queryRaw<{ failures: bigint }[]>`
       SELECT COUNT(*) AS failures
       FROM event_stream_logs
-      WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid
+      WHERE tenant_id = ${tenantId}::uuid
         AND status = 'FAILED'
         AND created_at > NOW() - INTERVAL '1 hour'
     `;

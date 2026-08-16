@@ -2,7 +2,8 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, DollarSign, Loader2, ShieldAlert, TrendingUp } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Building2, DollarSign, ShieldAlert, TrendingUp } from "lucide-react";
 import { DashboardSummary } from "@/services/dashboardApi";
 
 interface DashboardKpiGridProps {
@@ -16,7 +17,7 @@ export function DashboardKpiGrid({ summary, isLoading }: DashboardKpiGridProps) 
       title: "Sales Pipeline Demand",
       icon: TrendingUp,
       value: summary ? `₹${summary.salesPipelineDemand.toFixed(2)} Cr` : "₹0.00 Cr",
-      detail: summary ? `${summary.qualifiedLeadsCount} Qualified Leads Ingested` : "0 Qualified Leads Ingested",
+      detail: summary ? `${summary.qualifiedLeadsCount} Active Qualified Leads` : "0 Active Qualified Leads",
       detailIcon: TrendingUp,
     },
     {
@@ -24,8 +25,8 @@ export function DashboardKpiGrid({ summary, isLoading }: DashboardKpiGridProps) 
       icon: Building2,
       value: summary ? `${summary.inventoryRealizationPct.toFixed(1)}%` : "0.0%",
       detail: summary
-        ? `${summary.totalRegisteredUnits} Registered Units in Database`
-        : "0 Registered Units in Database",
+        ? `${summary.totalRegisteredUnits} Registered Units in Portfolio`
+        : "0 Registered Units in Portfolio",
       detailIcon: Building2,
     },
     {
@@ -39,7 +40,7 @@ export function DashboardKpiGrid({ summary, isLoading }: DashboardKpiGridProps) 
       title: "Automated HITL Approvals",
       icon: ShieldAlert,
       value: summary ? `${summary.pendingHitlApprovals} Pending` : "0 Pending",
-      detail: "Executive CFO Approval Guards",
+      detail: "Executive Approval Guards",
       detailIcon: ShieldAlert,
     },
   ];
@@ -58,7 +59,10 @@ export function DashboardKpiGrid({ summary, isLoading }: DashboardKpiGridProps) 
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <div className="space-y-2 py-0.5">
+                  <Skeleton className="h-7 w-32" />
+                  <Skeleton className="h-3.5 w-44 mt-1" />
+                </div>
               ) : (
                 <>
                   <div className="text-2xl font-bold text-foreground font-mono">{card.value}</div>

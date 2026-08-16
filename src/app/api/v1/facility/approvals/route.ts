@@ -8,38 +8,27 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const model = (prisma as any).unitHandover;
-    let records: any[] = [];
+    const records = await prisma.unitHandover.findMany({
+      where: {
+        tenantId: ACTIVE_TENANT_ID,
+        requiresHitl: true,
+        status: "PENDING_APPROVAL",
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-    if (model?.findMany) {
-      records = await model.findMany({
-        where: { requiresHitl: true, status: "PENDING_APPROVAL" },
-        orderBy: { createdAt: "desc" },
-      });
-    } else {
-      try {
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM unit_handovers
-          WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid AND requires_hitl = true AND status = 'PENDING_APPROVAL'
-          ORDER BY created_at DESC
-        `;
-        records = raw || [];
-      } catch {
-        records = [];
-      }
-    }
-
-    const mapped = records.map((r: any) => ({
+    const mapped = records.map((r) => ({
       id: r.id,
-      handoverReference: r.handoverReference || r.handover_reference || "",
-      unitName: r.unitName || r.unit_name || "",
-      buyerName: r.buyerName || r.buyer_name || "",
-      desnaggingCompletionPct: Number(r.desnaggingCompletionPct ?? r.desnagging_completion_pct ?? 0),
-      financialNocCleared: Boolean(r.financialNocCleared ?? r.financial_noc_cleared),
-      outstandingBalance: Number(r.outstandingBalance ?? r.outstanding_balance ?? 0),
+      handoverReference: r.handoverReference,
+      unitName: r.unitName,
+      buyerName: r.buyerName,
+      desnaggingCompletionPct: Number(r.desnaggingCompletionPct),
+      financialNocCleared: r.financialNocCleared,
+      outstandingBalance: Number(r.outstandingBalance),
       targetHandoverDate: r.targetHandoverDate ? new Date(r.targetHandoverDate).toISOString().split("T")[0] : "",
-      requiresHitl: Boolean(r.requiresHitl ?? r.requires_hitl),
+      requiresHitl: r.requiresHitl,
       status: r.status,
+      rejectionReason: r.rejectionReason || null,
     }));
 
     return NextResponse.json({
@@ -52,18 +41,20 @@ export async function GET(request: NextRequest) {
       meta: { total_records: mapped.length },
     });
   } catch (err: unknown) {
-    return NextResponse.json({
-      success: false,
-      status_code: 500,
-      timestamp: new Date().toISOString(),
-      request_id: `req-${Date.now()}`,
-      data: [],
-      error: {
-        code: "PENDING_FACILITY_APPROVALS_ERROR",
-        message: safeErrorMessage(err, "Pending facility approvals could not be loaded"),
+    return NextResponse.json(
+      {
+        success: false,
+        status_code: 500,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: [],
+        error: {
+          code: "PENDING_FACILITY_APPROVALS_ERROR",
+          message: safeErrorMessage(err, "Pending facility approvals could not be loaded"),
+        },
+        meta: { total_records: 0 },
       },
-      meta: { total_records: 0 },
-    }, { status: 500 });
+      { status: 500 }
+    );
   }
 }
-

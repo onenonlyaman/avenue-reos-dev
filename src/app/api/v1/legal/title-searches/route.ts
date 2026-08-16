@@ -1,58 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma, runtimeDdl } from "@/lib/db";
+import { prisma } from "@/lib/db";
+import { ensureTitleSearchRegister } from "@/lib/legalDb";
 import { ACTIVE_TENANT_ID } from "@/lib/tenant";
 import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
-
-async function ensureTitleSearchRegister() {
-  await runtimeDdl("table:title_search_logs", () => prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS title_search_logs (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      tenant_id UUID NOT NULL,
-      survey_number VARCHAR(100) NOT NULL,
-      legal_advocate VARCHAR(255) NOT NULL,
-      search_period_years INTEGER NOT NULL DEFAULT 30,
-      encumbrance_status VARCHAR(100) NOT NULL DEFAULT 'Clear',
-      extract_verified_712 BOOLEAN NOT NULL DEFAULT false,
-      risk_rating VARCHAR(50) NOT NULL DEFAULT 'LOW',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-}
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
+    await ensureTitleSearchRegister();
+
     const model = (prisma as any).titleSearchLog;
     let records: any[] = [];
 
     if (model?.findMany) {
       records = await model.findMany({
-        where: { tenantId: ACTIVE_TENANT_ID },
+        where: { tenantId },
         orderBy: { createdAt: "desc" },
       });
     } else {
-      try {
-        await ensureTitleSearchRegister();
-        const raw = await prisma.$queryRaw<any[]>`
-          SELECT * FROM title_search_logs WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY created_at DESC
-        `;
-        records = raw || [];
-      } catch {
-        records = [];
-      }
+      const raw = await prisma.$queryRaw<any[]>`
+        SELECT * FROM title_search_logs
+        WHERE tenant_id = ${tenantId}::uuid
+        ORDER BY created_at DESC
+      `;
+      records = raw || [];
     }
 
     const mapped = records.map((r: any) => ({
       id: r.id,
       surveyNumber: r.surveyNumber || r.survey_number || "",
       legalAdvocate: r.legalAdvocate || r.legal_advocate || "",
-      searchPeriodYears: Number(r.searchPeriodYears ?? r.search_period_years ?? 0),
-      encumbranceStatus: r.encumbranceStatus || r.encumbrance_status || "",
+      searchPeriodYears: Number(r.searchPeriodYears ?? r.search_period_years ?? 30),
+      encumbranceStatus: r.encumbranceStatus || r.encumbrance_status || "Clear",
       extractVerified712: Boolean(r.extractVerified712 ?? r.extract_verified_712),
       riskRating: r.riskRating || r.risk_rating || "LOW",
+      createdAt: r.createdAt || r.created_at || new Date().toISOString(),
     }));
 
     return NextResponse.json({
@@ -84,9 +70,13 @@ export async function POST(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const tenantId = auth.user.tenantId || ACTIVE_TENANT_ID;
+
   try {
     const body = await request.json();
-    const { surveyNumber, legalAdvocate, searchPeriodYears, encumbranceStatus, extractVerified712, riskRating } = body;
+    const surveyNumber = (body.surveyNumber || "").trim();
+    const legalAdvocate = (body.legalAdvocate || "").trim();
+    const { searchPeriodYears, encumbranceStatus, extractVerified712, riskRating } = body;
 
     if (!surveyNumber || !legalAdvocate) {
       return NextResponse.json({
@@ -97,11 +87,20 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "INCOMPLETE_TITLE_SEARCH_RECORD",
-          message: "Survey number and appointed advocate are required",
+          message: "Survey number and appointed legal advocate are required.",
         },
         meta: null,
       }, { status: 400 });
     }
+
+    const years = Number(searchPeriodYears);
+    const validYears = Number.isFinite(years) && years > 0 && years <= 100 ? Math.floor(years) : 30;
+
+    const validEncumbrance = ["Clear", "Encumbered", "Under Verification", "Mortgage Registered", "Disputed"];
+    const encumbrance = validEncumbrance.includes(encumbranceStatus) ? encumbranceStatus : "Clear";
+
+    const validRisk = ["LOW", "MEDIUM", "HIGH"];
+    const risk = validRisk.includes(riskRating) ? riskRating : "LOW";
 
     await ensureTitleSearchRegister();
 
@@ -110,8 +109,8 @@ export async function POST(request: NextRequest) {
         tenant_id, survey_number, legal_advocate, search_period_years,
         encumbrance_status, extract_verified_712, risk_rating
       ) VALUES (
-        ${ACTIVE_TENANT_ID}::uuid, ${surveyNumber}, ${legalAdvocate}, ${Number(searchPeriodYears) || 30},
-        ${encumbranceStatus || "Clear"}, ${Boolean(extractVerified712)}, ${riskRating || "LOW"}
+        ${tenantId}::uuid, ${surveyNumber}, ${legalAdvocate}, ${validYears},
+        ${encumbrance}, ${Boolean(extractVerified712)}, ${risk}
       )
       RETURNING *
     `;
@@ -131,6 +130,7 @@ export async function POST(request: NextRequest) {
         encumbranceStatus: created.encumbrance_status,
         extractVerified712: Boolean(created.extract_verified_712),
         riskRating: created.risk_rating,
+        createdAt: created.created_at,
       },
       error: null,
       meta: null,

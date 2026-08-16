@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Search, Filter, PhoneCall, FileText, History, Plus, MoreHorizontal, Loader2 } from "lucide-react";
+import { Search, Filter, PhoneCall, FileText, History, Plus, MoreHorizontal, Loader2, CalendarCheck, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -10,23 +10,35 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { CorporateEmptyState } from "@/components/core/CorporateEmptyState";
 import { useCatalogOptions } from "@/hooks/useCatalogOptions";
 import { RecordFormModal } from "@/components/core/RecordFormModal";
+
+export interface TimelineLogEvent {
+  id: string;
+  stage: string;
+  timestamp: string;
+  actor: string;
+  description: string;
+  completed: boolean;
+}
 
 export interface LeadRecord {
   id: string;
   name: string;
   phone: string;
   email: string;
-  source: "Web Form" | "WhatsApp" | "Property Portal" | "Walk-In" | "IVR Call";
+  source: string;
   interestedProject: string;
   unitType: string;
   budgetRange: string;
   leadScore: number;
-  status: "New" | "Contacted" | "Site Visit Scheduled" | "Qualified" | "Lost";
+  status: string;
   assignedRep: string;
+  assignedRepId?: string | null;
   createdDate: string;
+  events?: TimelineLogEvent[];
 }
 
 interface ProjectRecord {
@@ -51,11 +63,16 @@ export function LeadManagementView({
   const [statusFilter, setStatusFilter] = useState("All");
   const [sourceFilter, setSourceFilter] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [activeLogModalLead, setActiveLogModalLead] = useState<LeadRecord | null>(null);
-  const [logType, setLogType] = useState<"Call" | "SiteVisit">("Call");
+  const [activityStage, setActivityStage] = useState<string>("Phone Call");
+  const [activityNotes, setActivityNotes] = useState<string>("");
+  const [activityNextStatus, setActivityNextStatus] = useState<string>("");
+  const [isLoggingActivity, setIsLoggingActivity] = useState<boolean>(false);
 
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
+  const [isIngesting, setIsIngesting] = useState(false);
 
   const [isRecordFormOpen, setIsRecordFormOpen] = useState<boolean>(false);
   const [newLeadName, setNewLeadName] = useState("");
@@ -66,7 +83,7 @@ export function LeadManagementView({
   const [newLeadUnitType, setNewLeadUnitType] = useState("");
   const [newLeadBudgetMin, setNewLeadBudgetMin] = useState("");
   const [newLeadBudgetMax, setNewLeadBudgetMax] = useState("");
-  const [newLeadAssignedRep, setNewLeadAssignedRep] = useState("");
+  const [newLeadAssignedRepId, setNewLeadAssignedRepId] = useState("");
   const [salesRepresentatives, setSalesRepresentatives] = useState<{ id: string; fullName: string }[]>([]);
   const [typologies, setTypologies] = useState<string[]>([]);
 
@@ -79,6 +96,7 @@ export function LeadManagementView({
         setNewLeadProject(`${envelope.data[0].projectName} - ${envelope.data[0].location}`);
       }
     } catch {
+      // Ignored non-blocking
     }
   };
 
@@ -94,6 +112,7 @@ export function LeadManagementView({
         );
       }
     } catch {
+      // Ignored non-blocking
     }
   };
 
@@ -108,14 +127,16 @@ export function LeadManagementView({
         setTypologies(distinct);
       }
     } catch {
+      // Ignored non-blocking
     }
   };
 
   const loadLeads = async () => {
     try {
       setIsLoading(true);
+      setErrorMessage(null);
       const query = new URLSearchParams();
-      if (searchQuery) query.append("search", searchQuery);
+      if (searchQuery.trim()) query.append("search", searchQuery.trim());
       if (statusFilter !== "All") query.append("status", statusFilter);
       if (sourceFilter !== "All") query.append("source", sourceFilter);
 
@@ -125,9 +146,13 @@ export function LeadManagementView({
         setLeads(envelope.data);
       } else {
         setLeads([]);
+        if (envelope.error?.message) {
+          setErrorMessage(envelope.error.message);
+        }
       }
     } catch {
       setLeads([]);
+      setErrorMessage("Unable to connect to prospect register.");
     } finally {
       setIsLoading(false);
     }
@@ -140,25 +165,34 @@ export function LeadManagementView({
   }, []);
 
   useEffect(() => {
-    loadLeads();
-  }, [statusFilter, sourceFilter]);
+    const timer = setTimeout(() => {
+      loadLeads();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery, statusFilter, sourceFilter]);
 
   const handleIngestLead = async () => {
-    if (!newLeadName.trim() || !newLeadPhone.trim() || !newLeadEmail.trim() || !newLeadProject) return;
+    if (!newLeadName.trim() || !newLeadPhone.trim()) {
+      setErrorMessage("Prospect full name and contact number are required.");
+      return;
+    }
+
     try {
+      setIsIngesting(true);
+      setErrorMessage(null);
       const res = await fetch("/api/v1/crm/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newLeadName,
-          email: newLeadEmail,
-          phone: newLeadPhone,
+          name: newLeadName.trim(),
+          email: newLeadEmail.trim(),
+          phone: newLeadPhone.trim(),
           source: newLeadSource,
           interestedProject: newLeadProject,
           unitType: newLeadUnitType,
           budgetMinLakhs: newLeadBudgetMin,
           budgetMaxLakhs: newLeadBudgetMax,
-          assignedRep: newLeadAssignedRep,
+          assignedRepId: newLeadAssignedRepId || undefined,
         }),
       });
       const envelope = await res.json();
@@ -167,14 +201,62 @@ export function LeadManagementView({
         setNewLeadName("");
         setNewLeadPhone("");
         setNewLeadEmail("");
+        setNewLeadBudgetMin("");
+        setNewLeadBudgetMax("");
+        loadLeads();
+      } else {
+        setErrorMessage(envelope.error?.message || "Failed to record prospect.");
+      }
+    } catch {
+      setErrorMessage("Failed to submit prospect record.");
+    } finally {
+      setIsIngesting(false);
+    }
+  };
+
+  const handleLogActivity = async () => {
+    if (!activeLogModalLead || !activityNotes.trim()) return;
+
+    try {
+      setIsLoggingActivity(true);
+      const res = await fetch("/api/v1/crm/leads", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadId: activeLogModalLead.id,
+          action: "LOG_ACTIVITY",
+          logEntry: {
+            stage: activityStage,
+            description: activityNotes.trim(),
+            nextStatus: activityNextStatus || undefined,
+          },
+        }),
+      });
+      const envelope = await res.json();
+      if (envelope.success) {
+        setActiveLogModalLead(null);
+        setActivityNotes("");
+        setActivityNextStatus("");
         loadLeads();
       }
     } catch {
+      // Log failure
+    } finally {
+      setIsLoggingActivity(false);
     }
   };
 
   return (
     <div className="space-y-4">
+      {errorMessage && (
+        <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-xs text-destructive flex items-center justify-between">
+          <span>{errorMessage}</span>
+          <button type="button" className="font-semibold text-xs ml-2" onClick={() => setErrorMessage(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="bg-card text-card-foreground p-4 rounded-lg border border-border shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="flex-1 flex flex-col sm:flex-row items-center gap-3">
           <div className="relative w-full sm:w-72">
@@ -219,19 +301,17 @@ export function LeadManagementView({
           </div>
         </div>
 
-        <Button size="sm" variant="outline" className="h-8 text-xs font-medium gap-1.5" onClick={() => setIsRecordFormOpen(true)}>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-9 text-xs font-medium gap-1.5" onClick={() => setIsRecordFormOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Register Customer
+          </Button>
 
-          <Plus className="h-3.5 w-3.5" />
-
-          Register Customer
-
-        </Button>
-
-
-        <Button size="sm" className="h-9 text-xs gap-1.5 self-end md:self-auto" onClick={() => setIsIngestModalOpen(true)}>
-          <Plus className="h-3.5 w-3.5" />
-          Ingest New Lead
-        </Button>
+          <Button size="sm" className="h-9 text-xs gap-1.5" onClick={() => setIsIngestModalOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Ingest New Lead
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -242,7 +322,7 @@ export function LeadManagementView({
       ) : leads.length === 0 ? (
         <CorporateEmptyState
           title="No Prospect Records Found"
-          description="No prospects match the current filters."
+          description="No prospects match the current filter or search criteria."
           actionLabel="Ingest First Prospect Record"
           onAction={() => setIsIngestModalOpen(true)}
         />
@@ -255,7 +335,7 @@ export function LeadManagementView({
                 <TableHead className="text-xs font-semibold">Contact Details</TableHead>
                 <TableHead className="text-xs font-semibold">Interested Project & Type</TableHead>
                 <TableHead className="text-xs font-semibold">Budget Range</TableHead>
-                <TableHead className="text-xs font-semibold text-center">Lead Score</TableHead>
+                <TableHead className="text-xs font-semibold text-center">Score</TableHead>
                 <TableHead className="text-xs font-semibold">Status</TableHead>
                 <TableHead className="text-xs font-semibold">Assigned Representative</TableHead>
                 <TableHead className="text-xs font-semibold text-right">Actions</TableHead>
@@ -272,8 +352,8 @@ export function LeadManagementView({
                     <div className="text-[10px] text-muted-foreground">{lead.email}</div>
                   </TableCell>
                   <TableCell className="text-xs py-3">
-                    <div className="font-medium text-foreground">{lead.interestedProject}</div>
-                    <div className="text-[10px] text-muted-foreground">{lead.unitType}</div>
+                    <div className="font-medium text-foreground">{lead.interestedProject || "General Inquiry"}</div>
+                    <div className="text-[10px] text-muted-foreground">{lead.unitType || "Unspecified"}</div>
                   </TableCell>
                   <TableCell className="text-xs py-3 font-mono text-foreground">
                     {lead.budgetRange}
@@ -307,7 +387,7 @@ export function LeadManagementView({
                       {lead.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs py-3 text-foreground">{lead.assignedRep}</TableCell>
+                  <TableCell className="text-xs py-3 text-foreground">{lead.assignedRep || "Unassigned"}</TableCell>
                   <TableCell className="text-xs py-3 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger
@@ -323,7 +403,12 @@ export function LeadManagementView({
                             Prospect Actions
                           </DropdownMenuLabel>
                         </DropdownMenuGroup>
-                        <DropdownMenuItem onClick={() => setActiveLogModalLead(lead)}>
+                        <DropdownMenuItem onClick={() => {
+                          setActiveLogModalLead(lead);
+                          setActivityStage("Phone Call");
+                          setActivityNotes("");
+                          setActivityNextStatus(lead.status);
+                        }}>
                           <PhoneCall className="h-3.5 w-3.5 mr-2" />
                           Log Activity
                         </DropdownMenuItem>
@@ -346,6 +431,75 @@ export function LeadManagementView({
         </div>
       )}
 
+      {/* Activity Log Dialog */}
+      <Dialog open={!!activeLogModalLead} onOpenChange={(open) => !open && setActiveLogModalLead(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold font-heading flex items-center gap-2">
+              <CalendarCheck className="h-4 w-4 text-primary" />
+              Log Customer Interaction
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Record follow-up details for {activeLogModalLead?.name} ({activeLogModalLead?.phone}).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Activity Type</Label>
+              <Select value={activityStage} onValueChange={(val) => val && setActivityStage(val)}>
+                <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectValue placeholder="Select Activity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Phone Call">Phone Call / Discussion</SelectItem>
+                  <SelectItem value="Site Visit Conducted">Site Visit Conducted</SelectItem>
+                  <SelectItem value="Direct Meeting">In-Person Site Meeting</SelectItem>
+                  <SelectItem value="WhatsApp Discussion">WhatsApp Message Follow-Up</SelectItem>
+                  <SelectItem value="Requirement Review">Customer Requirement Note</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Discussion Notes & Feedback</Label>
+              <Textarea
+                placeholder="Document interaction summary, customer feedback, budget flexibility..."
+                value={activityNotes}
+                onChange={(e) => setActivityNotes(e.target.value)}
+                className="min-h-[90px] text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Advance Lead Stage</Label>
+              <Select value={activityNextStatus} onValueChange={(val) => val && setActivityNextStatus(val)}>
+                <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectValue placeholder="Keep Current Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Contacted">Contacted</SelectItem>
+                  <SelectItem value="Site Visit Scheduled">Site Visit Scheduled</SelectItem>
+                  <SelectItem value="Qualified">Qualified</SelectItem>
+                  <SelectItem value="Lost">Lost</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" className="text-xs h-8" onClick={() => setActiveLogModalLead(null)}>
+              Cancel
+            </Button>
+            <Button size="sm" className="text-xs h-8" onClick={handleLogActivity} disabled={isLoggingActivity || !activityNotes.trim()}>
+              {isLoggingActivity ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <MessageSquare className="h-3.5 w-3.5 mr-1" />}
+              Save Activity Log
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ingest Lead Dialog */}
       <Dialog open={isIngestModalOpen} onOpenChange={setIsIngestModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -359,7 +513,7 @@ export function LeadManagementView({
 
           <div className="space-y-3 py-2 text-xs">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Full Name</Label>
+              <Label className="text-xs font-medium">Full Name *</Label>
               <Input
                 placeholder="e.g. Rajesh Sharma"
                 value={newLeadName}
@@ -370,7 +524,7 @@ export function LeadManagementView({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Phone Number</Label>
+                <Label className="text-xs font-medium">Phone Number *</Label>
                 <Input
                   placeholder="+91 98220 12345"
                   value={newLeadPhone}
@@ -480,14 +634,14 @@ export function LeadManagementView({
 
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Assigned Representative</Label>
-                <Select value={newLeadAssignedRep} onValueChange={(val) => val && setNewLeadAssignedRep(val)}>
+                <Select value={newLeadAssignedRepId} onValueChange={(val) => val && setNewLeadAssignedRepId(val)}>
                   <SelectTrigger className="h-8 text-xs w-full">
                     <SelectValue placeholder="Select Rep" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Unassigned">Unassigned</SelectItem>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
                     {salesRepresentatives.map((rep) => (
-                      <SelectItem key={rep.id} value={rep.fullName}>
+                      <SelectItem key={rep.id} value={rep.id}>
                         {rep.fullName}
                       </SelectItem>
                     ))}
@@ -501,7 +655,8 @@ export function LeadManagementView({
             <Button variant="outline" size="sm" className="text-xs h-8" onClick={() => setIsIngestModalOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" className="text-xs h-8" onClick={handleIngestLead}>
+            <Button size="sm" className="text-xs h-8" onClick={handleIngestLead} disabled={isIngesting || !newLeadName.trim() || !newLeadPhone.trim()}>
+              {isIngesting ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
               Register Lead
             </Button>
           </DialogFooter>
@@ -529,5 +684,3 @@ export function LeadManagementView({
     </div>
   );
 }
-
-

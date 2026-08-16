@@ -14,33 +14,49 @@ export async function POST(request: NextRequest) {
 
   const numDebit = Number(debitAmount) || 0;
   const numCredit = Number(creditAmount) || 0;
-  const requiresHitl = numDebit > 4000000;
+  const requiresHitl = numDebit > 1000000;
   const status = requiresHitl ? "PENDING_HITL" : "POSTED";
   const tenantId = ACTIVE_TENANT_ID;
 
+  if (!accountHead || (!numDebit && !numCredit)) {
+    return NextResponse.json(
+      {
+        success: false,
+        status_code: 400,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "INVALID_JOURNAL_PAYLOAD",
+          message: "Account Head and a positive transaction amount are required.",
+        },
+      },
+      { status: 400 }
+    );
+  }
+
   try {
     let account = null;
-    if (accountHead) {
-      const codeMatch = accountHead.match(/^(\d+)/);
-      const code = codeMatch ? codeMatch[1] : accountHead;
-      const cleanName = accountHead.includes(" - ") ? accountHead.split(" - ")[1] : accountHead;
+    const codeMatch = accountHead.match(/^(\d+)/);
+    const code = codeMatch ? codeMatch[1] : accountHead;
+    const cleanName = accountHead.includes(" - ") ? accountHead.split(" - ")[1] : accountHead;
 
-      account = await prisma.masterChartOfAccounts.findFirst({
-        where: { tenantId: ACTIVE_TENANT_ID,
-          OR: [
-            { accountCode: { equals: code, mode: "insensitive" } },
-            { accountName: { contains: cleanName, mode: "insensitive" } },
-          ],
-        },
-      });
-    }
+    account = await prisma.masterChartOfAccounts.findFirst({
+      where: {
+        tenantId: ACTIVE_TENANT_ID,
+        OR: [
+          { accountCode: { equals: code, mode: "insensitive" } },
+          { accountName: { contains: cleanName, mode: "insensitive" } },
+        ],
+      },
+    });
 
     if (!account) {
       account = await prisma.masterChartOfAccounts.create({
         data: {
           tenantId,
-          accountCode: `ACC-${Math.floor(1000 + Math.random() * 9000)}`,
-          accountName: accountHead || "General Ledger Head",
+          accountCode: code.startsWith("ACC-") ? code : `ACC-${code}`,
+          accountName: cleanName || accountHead,
           accountType: "EXPENSE",
           status: "ACTIVE",
         },

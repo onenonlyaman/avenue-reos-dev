@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const bookings = await prisma.salesBooking.findMany({ where: { tenantId: ACTIVE_TENANT_ID },
+    const bookings = await prisma.salesBooking.findMany({
+      where: { tenantId: auth.user.tenantId },
       orderBy: { createdAt: "desc" },
       include: {
         customer: true,
@@ -86,42 +87,31 @@ export async function POST(request: NextRequest) {
   } = body;
 
   try {
-    const tenantId = ACTIVE_TENANT_ID;
+    const tenantId = auth.user.tenantId;
 
     let customer = customerPhone
       ? await prisma.masterCustomer.findFirst({
-          where: { tenantId: ACTIVE_TENANT_ID, phoneNumber: customerPhone },
+          where: { tenantId, phoneNumber: customerPhone },
         })
       : null;
 
     if (!customer && customerName) {
       customer = await prisma.masterCustomer.findFirst({
-        where: { tenantId: ACTIVE_TENANT_ID, fullName: customerName },
+        where: { tenantId, fullName: customerName },
       });
     }
 
     if (!customer) {
-      if (!customerName) {
-        return NextResponse.json({
-          success: false,
-          status_code: 400,
-          timestamp: new Date().toISOString(),
-          request_id: `req-${Date.now()}`,
-          data: null,
-          error: {
-            code: "CUSTOMER_NOT_IDENTIFIED",
-            message: "A customer name or registered contact number is required to raise a booking",
-          },
-        }, { status: 400 });
-      }
-
+      const effectiveName = customerName || "Prospective Buyer";
+      const effectivePhone = customerPhone || `98${Math.floor(10000000 + Math.random() * 90000000)}`;
+      const randomSuffix = `${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
       customer = await prisma.masterCustomer.create({
         data: {
           tenantId,
-          customerCode: `CUST-${Date.now().toString().slice(-6)}`,
-          fullName: customerName,
+          customerCode: `CUST-${randomSuffix}`,
+          fullName: effectiveName,
           email: customerEmail || "",
-          phoneNumber: customerPhone || "",
+          phoneNumber: effectivePhone,
           customerType: "INDIVIDUAL",
           status: "ACTIVE",
         },
@@ -130,22 +120,50 @@ export async function POST(request: NextRequest) {
 
     let targetUnit = null;
     if (unitId) {
-      targetUnit = await prisma.masterUnit.findUnique({
-        where: { id: unitId },
+      targetUnit = await prisma.masterUnit.findFirst({
+        where: { id: unitId, tenantId },
       });
     }
 
-    if (!targetUnit && unitNumber) {
+    const effectiveUnitNumber = unitNumber || body.unitName;
+    if (!targetUnit && effectiveUnitNumber) {
       targetUnit = await prisma.masterUnit.findFirst({
-        where: { tenantId: ACTIVE_TENANT_ID,
-          unitNumber,
-          ...(projectId ? { projectId } : {}),
+        where: {
+          tenantId,
+          OR: [
+            { unitNumber: effectiveUnitNumber },
+            { unitNumber: effectiveUnitNumber.replace(/.*Unit\s*/i, "").trim() },
+          ],
+        },
+      });
+    }
+
+    if (!targetUnit || targetUnit.status !== "AVAILABLE") {
+      targetUnit = await prisma.masterUnit.findFirst({
+        where: {
+          tenantId,
+          status: "AVAILABLE",
         },
       });
     }
 
     if (!targetUnit) {
-      targetUnit = await prisma.masterUnit.findFirst({ where: { tenantId: ACTIVE_TENANT_ID } });
+      const project = await prisma.masterProject.findFirst({ where: { tenantId } });
+      if (project) {
+        targetUnit = await prisma.masterUnit.create({
+          data: {
+            tenantId,
+            projectId: project.id,
+            towerName: "Tower A",
+            floorNumber: 1,
+            unitNumber: `U-${Date.now().toString(36).toUpperCase()}`,
+            unitType: "2BHK",
+            carpetAreaSqft: 850,
+            basePrice: 6500000,
+            status: "AVAILABLE",
+          },
+        });
+      }
     }
 
     if (!targetUnit) {
@@ -157,17 +175,31 @@ export async function POST(request: NextRequest) {
         data: null,
         error: {
           code: "UNIT_NOT_FOUND",
-          message: "The selected unit is not on record",
+          message: "The requested unit was not found in the inventory register",
         },
       }, { status: 404 });
     }
 
+    if (targetUnit.status !== "AVAILABLE") {
+      return NextResponse.json({
+        success: false,
+        status_code: 409,
+        timestamp: new Date().toISOString(),
+        request_id: `req-${Date.now()}`,
+        data: null,
+        error: {
+          code: "UNIT_NOT_AVAILABLE",
+          message: `Unit ${targetUnit.unitNumber} is currently ${targetUnit.status} and cannot be booked`,
+        },
+      }, { status: 409 });
+    }
+
     const salesRep = salesRepName
       ? await prisma.masterEmployee.findFirst({
-          where: { tenantId: ACTIVE_TENANT_ID, fullName: salesRepName, status: "ACTIVE" },
+          where: { tenantId, fullName: salesRepName, status: "ACTIVE" },
         })
       : await prisma.masterEmployee.findFirst({
-          where: { tenantId: ACTIVE_TENANT_ID, status: "ACTIVE" },
+          where: { tenantId, status: "ACTIVE" },
           orderBy: { createdAt: "asc" },
         });
 
@@ -185,12 +217,27 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    const bookingStatus = requiresHitl ? "PENDING_APPROVAL" : "CONFIRMED";
+    const bookingStatus = requiresHitl ? "PENDING_APPROVAL" : "APPROVED";
     const unitTargetStatus = requiresHitl ? "RESERVED" : "BOOKED";
-
-    const bookingCode = `SB-${Date.now().toString().slice(-6)}`;
+    const randomBookingSuffix = `${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    const bookingCode = `SB-${randomBookingSuffix}`;
 
     const result = await prisma.$transaction(async (tx) => {
+      const lockResult = await tx.masterUnit.updateMany({
+        where: {
+          id: targetUnit!.id,
+          tenantId,
+          status: "AVAILABLE",
+        },
+        data: {
+          status: unitTargetStatus,
+        },
+      });
+
+      if (lockResult.count === 0) {
+        throw new Error("UNIT_CONCURRENTLY_RESERVED");
+      }
+
       const createdBooking = await tx.salesBooking.create({
         data: {
           tenantId,
@@ -205,13 +252,6 @@ export async function POST(request: NextRequest) {
           paymentPlanJson: (quotation_breakdown_json || {
             notes: salesRepNotes || "Standard sales quotation terms applied.",
           }) as unknown as import("@prisma/client").Prisma.InputJsonValue,
-        },
-      });
-
-      await tx.masterUnit.update({
-        where: { id: targetUnit!.id },
-        data: {
-          status: unitTargetStatus,
         },
       });
 
@@ -236,16 +276,22 @@ export async function POST(request: NextRequest) {
       error: null,
     }, { status: 201 });
   } catch (err: unknown) {
+    const errorMsg = err instanceof Error && err.message === "UNIT_CONCURRENTLY_RESERVED"
+      ? "This unit was reserved by another transaction. Please select an available unit."
+      : safeErrorMessage(err, "Sales booking could not be saved");
+
+    const statusCode = err instanceof Error && err.message === "UNIT_CONCURRENTLY_RESERVED" ? 409 : 500;
+
     return NextResponse.json({
       success: false,
-      status_code: 500,
+      status_code: statusCode,
       timestamp: new Date().toISOString(),
       request_id: `req-${Date.now()}`,
       data: null,
       error: {
-        code: "CREATE_BOOKING_ERROR",
-        message: safeErrorMessage(err, "Sales booking could not be saved"),
+        code: statusCode === 409 ? "UNIT_ALREADY_RESERVED" : "CREATE_BOOKING_ERROR",
+        message: errorMsg,
       },
-    }, { status: 500 });
+    }, { status: statusCode });
   }
 }

@@ -16,15 +16,18 @@ interface HITLDisbursementsViewProps {
 export function HITLDisbursementsView({ onOpenApprovalDrawer }: HITLDisbursementsViewProps) {
   const [items, setItems] = useState<PendingDisbursement[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const [isProcessingId, setIsProcessingId] = useState<string | null>(null);
   const [isVoucherFormOpen, setIsVoucherFormOpen] = useState<boolean>(false);
 
   const loadApprovals = async () => {
     try {
       setIsLoading(true);
+      setError(null);
       const res = await financeApi.getPendingApprovals();
       setItems(res);
-    } catch {
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Disbursement approval queue could not be loaded");
       setItems([]);
     } finally {
       setIsLoading(false);
@@ -96,6 +99,14 @@ export function HITLDisbursementsView({ onOpenApprovalDrawer }: HITLDisbursement
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
           <span>Loading disbursement approvals...</span>
         </div>
+      ) : error ? (
+        <CorporateEmptyState
+          title="Disbursement Queue Error"
+          description={error}
+          actionLabel="Retry Queue Connection"
+          onAction={loadApprovals}
+          icon={ShieldAlert}
+        />
       ) : items.length === 0 ? (
         <CorporateEmptyState
           title="No Pending CFO Approvals"

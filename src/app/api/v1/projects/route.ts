@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const projects = await prisma.masterProject.findMany({
-      where: { tenantId: ACTIVE_TENANT_ID },
+      where: { tenantId: auth.user.tenantId },
       orderBy: { createdAt: "desc" },
       include: {
         units: {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const { projectCode, projectName, location, totalAreaSqft, totalBudget, startDate, expectedCompletionDate } = body;
-  const tenantId = ACTIVE_TENANT_ID;
+  const tenantId = auth.user.tenantId;
 
   if (!projectName || !location || !totalAreaSqft || !totalBudget || !expectedCompletionDate) {
     return NextResponse.json({
@@ -84,12 +84,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const randomSuffix = `${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const created = await prisma.masterProject.create({
       data: {
         tenantId,
-        projectCode: projectCode || `PRJ-${Date.now().toString().slice(-6)}`,
-        projectName,
-        location,
+        projectCode: projectCode?.trim() || `PRJ-${randomSuffix}`,
+        projectName: projectName.trim(),
+        location: location.trim(),
         totalAreaSqft: Number(totalAreaSqft),
         totalBudget: Number(totalBudget),
         status: "ACTIVE",

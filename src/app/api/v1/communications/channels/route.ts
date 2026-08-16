@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, runtimeDdl } from "@/lib/db";
-import { ACTIVE_TENANT_ID } from "@/lib/tenant";
-import { requireApiAccess, safeErrorMessage } from "@/lib/apiAccess";
+import { requireApiAccess, AuthenticatedContext, safeErrorMessage } from "@/lib/apiAccess";
 
 export async function GET(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
+
+  const { user } = auth as AuthenticatedContext;
+  const tenantId = user.tenantId;
 
   try {
     await runtimeDdl("table:chat_channels", () => prisma.$executeRaw`
@@ -23,7 +25,9 @@ export async function GET(request: NextRequest) {
     `);
 
     const raw = await prisma.$queryRaw<any[]>`
-      SELECT * FROM chat_channels WHERE tenant_id = ${ACTIVE_TENANT_ID}::uuid ORDER BY last_activity DESC
+      SELECT * FROM chat_channels
+      WHERE tenant_id = ${tenantId}::uuid
+      ORDER BY last_activity DESC
     `;
 
     const mapped = (raw || []).map((r: any) => ({
@@ -65,10 +69,12 @@ export async function POST(request: NextRequest) {
   const auth = await requireApiAccess(request);
   if (auth instanceof NextResponse) return auth;
 
+  const { user } = auth as AuthenticatedContext;
+  const tenantId = user.tenantId;
+
   try {
     const body = await request.json();
     const { channelName, department, description, isPrivate } = body;
-    const tenantId = ACTIVE_TENANT_ID;
 
     if (!channelName || !department) {
       return NextResponse.json({
@@ -98,9 +104,9 @@ export async function POST(request: NextRequest) {
 
     const inserted = await prisma.$queryRaw<any[]>`
       INSERT INTO chat_channels (
-        tenant_id, channel_name, department, description, is_private, member_count
+        tenant_id, channel_name, department, description, is_private, member_count, last_activity, created_at
       ) VALUES (
-        ${tenantId}::uuid, ${channelName}, ${department}, ${description || ""}, ${Boolean(isPrivate)}, 12
+        ${tenantId}::uuid, ${channelName}, ${department}, ${description || ""}, ${Boolean(isPrivate)}, 1, NOW(), NOW()
       )
       RETURNING *
     `;
@@ -139,6 +145,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-

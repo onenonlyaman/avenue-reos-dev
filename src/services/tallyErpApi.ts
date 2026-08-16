@@ -1,61 +1,127 @@
+import { BookScope } from "@/lib/accounting/multiBookScope";
+
 export interface TallyVoucher {
   id: string;
   voucherNumber: string;
   voucherType: string;
+  bookType?: string;
   postingDate: string;
+  referenceNumber?: string;
   narration: string;
   totalAmount: number;
+  currency?: string;
   status: string;
   requiresHitl: boolean;
-  isOptional: boolean;
-  isReversing: boolean;
   debitLedgerName?: string;
   creditLedgerName?: string;
-  entries?: TallyVoucherEntry[];
-}
-
-export interface TallyVoucherEntry {
-  id: string;
-  ledgerId: string;
-  ledgerName: string;
-  costCenterId?: string;
-  debitAmount: number;
-  creditAmount: number;
-  fxRate: number;
-  billReferenceType?: string;
-  billNumber?: string;
+  entries?: {
+    id: string;
+    ledgerId: string;
+    ledgerName: string;
+    costCenterId?: string;
+    entryType: "Dr" | "Cr";
+    debitAmount: number;
+    creditAmount: number;
+    billReference?: string;
+    particulars?: string;
+  }[];
 }
 
 export interface TallyLedger {
   id: string;
+  code: string;
+  name: string;
   primaryGroup: string;
   subGroup: string;
+  groupCode: string;
+  group: string;
+  nature: "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE";
   ledgerName: string;
   ledgerType: string;
   openingBalance: number;
   currentBalance: number;
+  balance: number;
+  type: "Dr" | "Cr";
+  bookType: "STATUTORY" | "INTERNAL";
   currencyCode: string;
   gstin?: string;
   pan?: string;
+  hsnSacCode?: string;
+  bankAccountNumber?: string;
+  bankIfscCode?: string;
+  isMsme: boolean;
+  msmeCategory?: string;
 }
 
 export interface GstSummaryResponse {
+  gstr1: {
+    totalOutwardSupplies: number;
+    invoices: {
+      id: string;
+      voucherNumber: string;
+      voucherDate: string;
+      totalAmount: number;
+      irn: string | null;
+    }[];
+  };
+  gstr3b: {
+    table31: {
+      taxableSupplies: number;
+      cgst: number;
+      sgst: number;
+      igst: number;
+    };
+    table4_itc: {
+      eligibleItcTotal: number;
+      itcCgst: number;
+      itcSgst: number;
+      itcIgst: number;
+    };
+    taxOffset: {
+      liabilities: {
+        igst: number;
+        cgst: number;
+        sgst: number;
+        totalCashPayable: number;
+      };
+      itcCarriedForward: {
+        igst: number;
+        cgst: number;
+        sgst: number;
+        total: number;
+      };
+    };
+  };
+  gstr2bReconciliations: {
+    id: string;
+    vendorGstin: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    taxableValue: number;
+    cgstAmount: number;
+    sgstAmount: number;
+    igstAmount: number;
+    itcEligibility: string;
+    imsAction: "ACCEPT" | "REJECT" | "PENDING";
+    reconciliationStatus: string;
+  }[];
+  eInvoices: {
+    id: string;
+    voucherNumber: string;
+    voucherDate: string;
+    totalAmount: number;
+    irn: string;
+    ackNumber: string;
+    signedQrCode: string;
+    ewayBillNumber: string;
+    status: string;
+  }[];
   gstr1SalesTotal: number;
   gstr3bTaxLiability: number;
   gstr2aItcAvailable: number;
   itcMismatchCount: number;
   eInvoicesGeneratedCount: number;
   pendingIrnCount: number;
-  mismatches: {
-    id: string;
-    vendorName: string;
-    invoiceNumber: string;
-    invoiceDate: string;
-    portalItcAmount: number;
-    booksItcAmount: number;
-    varianceAmount: number;
-    status: string;
-  }[];
 }
 
 export interface TdsMsmeResponse {
@@ -94,46 +160,78 @@ export interface TdsMsmeResponse {
 
 export interface GodownItem {
   id: string;
-  godownName: string;
-  parentGodownName: string;
-  rackLocation: string;
-  binNumber: string;
-  stockBatches: {
-    id: string;
-    itemName: string;
-    batchNumber: string;
-    quantity: number;
-    unitCost: number;
-    manufactureDate: string;
-    expiryDate: string;
-    valuationMethod: string;
-  }[];
+  name: string;
+  location: string;
+  supervisor: string;
+  capacityUtilizationPct: number;
+  activeItemsCount: number;
+  valuationInr: number;
+}
+
+export interface StockItemDetail {
+  id: string;
+  itemCode: string;
+  itemName: string;
+  groupName: string;
+  uom: string;
+  hsnCode: string;
+  currentStock: number;
+  reorderLevel: number;
+  valuationMethod: string;
+  standardRate: number;
+  totalValuation: number;
+  isShortfall: boolean;
 }
 
 export interface BomRecipe {
   id: string;
-  recipeName: string;
-  finishedGoodsItemName: string;
-  componentItemName: string;
-  standardQuantity: number;
-  overheadCostAllocationPct: number;
-  scrapRatePct: number;
+  bomName: string;
+  finishedProductName: string;
+  finishedItemId: string;
+  yieldQuantity: number;
+  uom: string;
+  componentsCount: number;
+  components: {
+    componentItemId: string;
+    componentName: string;
+    quantity: number;
+    uom: string;
+    currentStock: number;
+    scrapRatePct: number;
+  }[];
 }
 
 export interface BankBrsResponse {
-  importedNetAmount: number;
-  reconciledAmount: number;
-  unreconciledChequesCount: number;
-  matchedTransactionsCount: number;
-  brsItems: {
+  accounts: {
     id: string;
-    transactionDate: string | null;
+    bankName: string;
+    accountNumber: string;
+    ifscCode: string;
+    bookBalance: number;
+    bankStatementBalance: number;
+    unreconciledDr: number;
+    unreconciledCr: number;
+    lastReconciledDate: string;
+  }[];
+  unmatchedStatements: {
+    id: string;
+    date: string;
+    reference: string;
     description: string;
-    referenceNumber: string;
-    amount: number;
-    type: string;
+    withdrawalDebit: number;
+    depositCredit: number;
     status: string;
-    matchConfidencePct: number;
+    matchedVoucherNumber: string;
+    matchScore: number;
+  }[];
+  bookEntries: {
+    voucherId: string;
+    voucherNumber: string;
+    voucherDate: string;
+    referenceNumber: string;
+    particulars: string;
+    entryType: "Dr" | "Cr";
+    amount: number;
   }[];
 }
 
@@ -153,6 +251,7 @@ export interface FinancialReportsResponse {
   trialBalance: {
     ledgerName: string;
     primaryGroup: string;
+    nature: string;
     debitAmount: number;
     creditAmount: number;
   }[];
@@ -164,8 +263,36 @@ export interface FinancialReportsResponse {
     days90: number;
     days90Plus: number;
   }[];
+  totalAssets: number;
+  totalLiabilities: number;
+  totalIncome: number;
+  totalExpense: number;
+  netProfit: number;
   cashRunwayMonths: number;
   netWorkingCapital: number;
+}
+
+export interface CashVaultResponse {
+  activeSession: any | null;
+  history: {
+    id: string;
+    date: string;
+    cashierName: string;
+    openingBalance: number;
+    physicalCountedTotal: number;
+    systemExpectedTotal: number;
+    varianceAmount: number;
+    status: string;
+    remarks: string;
+    createdAt: string;
+    closedAt: string | null;
+  }[];
+  systemExpectedCash: number;
+  cashLedgers: {
+    id: string;
+    name: string;
+    balance: number;
+  }[];
 }
 
 class TallyErpApiService {
@@ -186,124 +313,282 @@ class TallyErpApiService {
     return json.data as T;
   }
 
-  async fetchVouchers(): Promise<TallyVoucher[]> {
-    return this.request<TallyVoucher[]>("/api/v1/finance/tally/vouchers");
+  async fetchVouchers(bookScope: BookScope = "STATUTORY"): Promise<TallyVoucher[]> {
+    return this.request<TallyVoucher[]>(`/api/v1/finance/tally/vouchers?bookScope=${bookScope}`);
   }
 
   async createVoucher(payload: {
     voucherType: string;
+    bookType?: "STATUTORY" | "INTERNAL";
     postingDate?: string;
     narration: string;
-    debitLedgerId: string;
-    creditLedgerId: string;
-    totalAmount: number;
-    billReferenceType?: string;
+    debitLedgerId?: string;
+    creditLedgerId?: string;
+    totalAmount?: number;
     billNumber?: string;
+    billReferenceType?: string;
     costCenterId?: string;
-  }): Promise<TallyVoucher> {
-    return this.request<TallyVoucher>("/api/v1/finance/tally/vouchers", {
+    items?: any[];
+    auditReason?: string;
+  }): Promise<any> {
+    return this.request<any>("/api/v1/finance/tally/vouchers", {
       method: "POST",
       body: JSON.stringify(payload),
     });
   }
 
-  async fetchChartOfAccounts(): Promise<TallyLedger[]> {
-    return this.request<TallyLedger[]>("/api/v1/finance/tally/chart-of-accounts");
+  async fetchChartOfAccounts(bookScope: BookScope = "STATUTORY"): Promise<{
+    data: TallyLedger[];
+    groups: any[];
+    costCenters: any[];
+  }> {
+    const res = await fetch(`/api/v1/finance/tally/chart-of-accounts?bookScope=${bookScope}`, {
+      headers: { "Content-Type": "application/json" },
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || "Failed to fetch Chart of Accounts");
+    }
+    return { data: json.data || [], groups: json.groups || [], costCenters: json.costCenters || [] };
   }
 
   async createLedger(payload: {
-    primaryGroup: string;
-    subGroup: string;
-    ledgerName: string;
-    ledgerType: string;
-    openingBalance?: number;
-    currencyCode?: string;
+    name: string;
+    groupCode?: string;
+    groupId?: string;
+    bookType?: "STATUTORY" | "INTERNAL";
+    balance?: number;
+    type?: "Dr" | "Cr";
     gstin?: string;
     pan?: string;
+    hsnSacCode?: string;
+    bankAccountNumber?: string;
+    bankIfscCode?: string;
+    isMsme?: boolean;
+    msmeCategory?: string;
   }): Promise<TallyLedger> {
-    return this.request<TallyLedger[]>("/api/v1/finance/tally/chart-of-accounts", {
+    return this.request<TallyLedger>("/api/v1/finance/tally/chart-of-accounts", {
       method: "POST",
       body: JSON.stringify(payload),
-    }).then(() => this.fetchChartOfAccounts().then((items) => items[items.length - 1]));
+    });
+  }
+
+  async createGroup(payload: { newGroupName: string; newGroupNature: string; parentGroupId?: string }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/chart-of-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "CREATE_GROUP", ...payload }),
+    });
+    return res.json();
+  }
+
+  async createCostCenter(payload: { centerName: string; centerCategory: string }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/chart-of-accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "CREATE_COST_CENTER", ...payload }),
+    });
+    return res.json();
   }
 
   async fetchGstSummary(): Promise<GstSummaryResponse> {
     return this.request<GstSummaryResponse>("/api/v1/finance/tally/statutory/gst");
   }
 
-  async generateEInvoice(payload: { invoiceNumber: string }): Promise<{ irn: string; eWayBillNumber: string }> {
-    return this.request<{ irn: string; eWayBillNumber: string }>("/api/v1/finance/tally/statutory/gst", {
+  async updateImsAction(reconciliationId: string, imsAction: "ACCEPT" | "REJECT" | "PENDING"): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/statutory/gst", {
       method: "POST",
-      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "UPDATE_IMS_ACTION", reconciliationId, imsAction }),
     });
+    return res.json();
+  }
+
+  async generateEInvoice(payload: {
+    voucherId?: string;
+    docNumber: string;
+    docDate?: string;
+    totalAmount?: number;
+  }): Promise<{ irn: string; eWayBillNumber: string; ackNumber: string; signedQrCode: string }> {
+    return this.request<{ irn: string; eWayBillNumber: string; ackNumber: string; signedQrCode: string }>(
+      "/api/v1/finance/tally/statutory/gst",
+      {
+        method: "POST",
+        body: JSON.stringify({ action: "GENERATE_E_INVOICE", ...payload }),
+      }
+    );
   }
 
   async fetchTdsMsmeSummary(): Promise<TdsMsmeResponse> {
     return this.request<TdsMsmeResponse>("/api/v1/finance/tally/statutory/tds-msme");
   }
 
-  async fetchGodowns(): Promise<GodownItem[]> {
-    return this.request<GodownItem[]>("/api/v1/finance/tally/inventory/godowns");
-  }
-
-  async createStockJournal(payload: {
-    sourceGodownId: string;
-    targetGodownId: string;
-    itemName: string;
-    quantity: number;
-    batchNumber: string;
-    unitCost: number;
-  }): Promise<{ stockJournalRef: string }> {
-    return this.request<{ stockJournalRef: string }>("/api/v1/finance/tally/inventory/godowns", {
+  async createMsmeRecord(payload: {
+    vendorName: string;
+    msmeCategory?: string;
+    invoiceNumber: string;
+    amount: number;
+    dueDate?: string;
+    reasonForChange?: string;
+  }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/statutory/tds-msme", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    return res.json();
+  }
+
+  async fetchGodowns(): Promise<{ godowns: GodownItem[]; stockItems: StockItemDetail[]; summary: any }> {
+    return this.request<{ godowns: GodownItem[]; stockItems: StockItemDetail[]; summary: any }>(
+      "/api/v1/finance/tally/inventory/godowns"
+    );
+  }
+
+  async createGodown(payload: { godownName: string; locationAddress: string }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/inventory/godowns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "CREATE_GODOWN", ...payload }),
+    });
+    return res.json();
+  }
+
+  async createStockItem(payload: {
+    itemName: string;
+    uom: string;
+    hsnCode: string;
+    gstRate: number;
+    standardRate: number;
+    currentStock: number;
+    reorderLevel: number;
+    valuationMethod: string;
+  }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/inventory/godowns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "CREATE_STOCK_ITEM", ...payload }),
+    });
+    return res.json();
   }
 
   async fetchBomRecipes(): Promise<BomRecipe[]> {
     return this.request<BomRecipe[]>("/api/v1/finance/tally/inventory/bom");
   }
 
-  async postProductionVoucher(payload: {
-    recipeId: string;
-    producedQuantity: number;
-  }): Promise<{ productionVoucherRef: string }> {
-    return this.request<{ productionVoucherRef: string }>("/api/v1/finance/tally/inventory/bom", {
+  async createBomRecipe(payload: {
+    bomName: string;
+    finishedItemId: string;
+    yieldQuantity: number;
+    components: { componentItemId: string; quantity: number; scrapRatePct: number }[];
+  }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/inventory/bom", {
       method: "POST",
-      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "CREATE_BOM", ...payload }),
     });
+    return res.json();
+  }
+
+  async executeManufacturingJournal(bomId: string, targetProductionQty: number): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/inventory/bom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "EXECUTE_MANUFACTURING_JOURNAL", bomId, targetProductionQty }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to execute manufacturing journal");
+    return json;
   }
 
   async fetchBankingBrs(): Promise<BankBrsResponse> {
     return this.request<BankBrsResponse>("/api/v1/finance/tally/banking/e-brs");
   }
 
-  async uploadBankStatement(payload: {
-    filename: string;
-    rawData: string;
-  }): Promise<{
-    importedCount: number;
-    rejectedCount: number;
-    rejectedLines: string[];
-    reconciliationPerformed: boolean;
-  }> {
-    return this.request<{
-      importedCount: number;
-      rejectedCount: number;
-      rejectedLines: string[];
-      reconciliationPerformed: boolean;
-    }>("/api/v1/finance/tally/banking/e-brs", {
+  async uploadBankStatementCsv(bankLedgerId: string, fileName: string, csvContent: string): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/banking/e-brs", {
       method: "POST",
-      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "UPLOAD_STATEMENT_CSV", bankLedgerId, fileName, csvContent }),
     });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to upload bank statement");
+    return json;
   }
 
-  async fetchFinancialReports(): Promise<FinancialReportsResponse> {
-    return this.request<FinancialReportsResponse>("/api/v1/finance/tally/reports/financials");
+  async runAutoReconcile(): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/banking/e-brs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "AUTO_RECONCILE" }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to execute auto reconciliation");
+    return json;
+  }
+
+  async exportPayoutBatchCsv(): Promise<{ csvData: string; fileName: string }> {
+    const res = await fetch("/api/v1/finance/tally/banking/e-brs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "EXPORT_PAYOUT_BATCH" }),
+    });
+    const json = await res.json();
+    return json;
+  }
+
+  async fetchCashVault(): Promise<CashVaultResponse> {
+    return this.request<CashVaultResponse>("/api/v1/finance/tally/vault");
+  }
+
+  async openCashVaultSession(cashierName: string, openingBalance: number): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/vault", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "OPEN_SESSION", cashierName, openingBalance }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to open cash vault session");
+    return json;
+  }
+
+  async closeCashVaultSession(payload: {
+    sessionId: string;
+    counts: any;
+    systemExpectedBalance: number;
+    remarks?: string;
+  }): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/vault", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "CLOSE_SESSION", ...payload }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to close cash vault session");
+    return json;
+  }
+
+  async fetchRegulatoryRules(): Promise<any> {
+    return this.request<any>("/api/v1/finance/tally/regulatory");
+  }
+
+  async executeFinancialTool(toolType: string, payload: any): Promise<any> {
+    const res = await fetch("/api/v1/finance/tally/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ toolType, ...payload }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to calculate tool formula");
+    return json.result;
+  }
+
+  async fetchFinancialReports(bookScope: BookScope = "STATUTORY"): Promise<FinancialReportsResponse> {
+    return this.request<FinancialReportsResponse>(`/api/v1/finance/tally/reports/financials?bookScope=${bookScope}`);
   }
 
   async fetchPendingApprovals(): Promise<TallyVoucher[]> {
-    const vouchers = await this.fetchVouchers();
+    const vouchers = await this.fetchVouchers("BOTH");
     return vouchers.filter((v) => v.requiresHitl || v.status === "PENDING_APPROVAL");
   }
 
